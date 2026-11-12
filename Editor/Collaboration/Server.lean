@@ -66,7 +66,7 @@ def submit (s : CollaborationServer) (base : Nat) (edit : BOps)
     CollaborationServer × BOps := by
   let next := s.srv.submit base edit
   have hnext : next.1.Wf := s.srv.submit_wf s.wf base edit hedit
-  exact (⟨next.1, hnext, s.revision :: s.undoHistory, [], s.receipts ++ [(\"\", \"\")]⟩, next.2)
+  exact (⟨next.1, hnext, s.revision :: s.undoHistory, [], s.receipts ++ [("", "")]⟩, next.2)
 
 /-- The transformed edit returned by submit is valid at the previous head. -/
 theorem submit_accepted_valid (s : CollaborationServer) (base : Nat)
@@ -111,7 +111,7 @@ def undo (s : CollaborationServer) : Option CollaborationServer :=
         wf := Server.undo_wf s.srv s.wf target edit h
         undoHistory := rest
         redoHistory := (target, s.revision) :: s.redoHistory
-        receipts := s.receipts ++ [(\"\", \"\")]
+        receipts := s.receipts ++ [("", "")]
       }
 
 /-- Redo the most recently undone edit by selectively undoing its undo record. -/
@@ -128,7 +128,7 @@ def redo (s : CollaborationServer) : Option CollaborationServer :=
         wf := Server.undo_wf s.srv s.wf undoRevision undoEdit h
         undoHistory := target :: s.undoHistory
         redoHistory := rest
-        receipts := s.receipts ++ [(\"\", \"\")]
+        receipts := s.receipts ++ [("", "")]
       }
 
 end CollaborationServer
