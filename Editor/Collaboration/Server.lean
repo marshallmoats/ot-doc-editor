@@ -37,6 +37,8 @@ structure CollaborationServer where
   undoHistory : List Nat
   /-- Pairs of (original revision, undo-record revision) available to redo. -/
   redoHistory : List (Nat × Nat)
+  /-- Client/request identity for each server-log revision; empty for room undo/redo. -/
+  receipts : List (String × String)
 
 namespace CollaborationServer
 
@@ -46,6 +48,7 @@ def init (doc : BDoc) : CollaborationServer where
   wf := trivial
   undoHistory := []
   redoHistory := []
+  receipts := []
 
 /-- Current monotonically increasing server revision. -/
 def revision (s : CollaborationServer) : Nat :=
@@ -63,7 +66,7 @@ def submit (s : CollaborationServer) (base : Nat) (edit : BOps)
     CollaborationServer × BOps := by
   let next := s.srv.submit base edit
   have hnext : next.1.Wf := s.srv.submit_wf s.wf base edit hedit
-  exact (⟨next.1, hnext, s.revision :: s.undoHistory, []⟩, next.2)
+  exact (⟨next.1, hnext, s.revision :: s.undoHistory, [], s.receipts ++ [(\"\", \"\")]⟩, next.2)
 
 /-- The transformed edit returned by submit is valid at the previous head. -/
 theorem submit_accepted_valid (s : CollaborationServer) (base : Nat)
@@ -82,6 +85,7 @@ def accept (s : CollaborationServer) (request : SubmitRequest)
     CollaborationServer × SubmitReceipt := by
   let (next, accepted) :=
     s.submit request.baseRevision request.edit hbase hedit
+  let next := { next with receipts := s.receipts ++ [(request.clientId, request.requestId)] }
   exact (next, {
     clientId := request.clientId
     requestId := request.requestId
@@ -107,6 +111,7 @@ def undo (s : CollaborationServer) : Option CollaborationServer :=
         wf := Server.undo_wf s.srv s.wf target edit h
         undoHistory := rest
         redoHistory := (target, s.revision) :: s.redoHistory
+        receipts := s.receipts ++ [(\"\", \"\")]
       }
 
 /-- Redo the most recently undone edit by selectively undoing its undo record. -/
@@ -123,6 +128,7 @@ def redo (s : CollaborationServer) : Option CollaborationServer :=
         wf := Server.undo_wf s.srv s.wf undoRevision undoEdit h
         undoHistory := target :: s.undoHistory
         redoHistory := rest
+        receipts := s.receipts ++ [(\"\", \"\")]
       }
 
 end CollaborationServer
