@@ -240,7 +240,7 @@ function applyOptimisticReplace(from, to, text) {
   const before = state.doc;
   const prefix = [...(before[from.block]?.text || '')].slice(0, from.offset);
   const suffix = [...(before[to.block]?.text || '')].slice(to.offset);
-  const lines = text.replace(/\\r\\n?/g, '\\n').split('\\n').map(line => [...line]);
+  const lines = text.replace(/\r\n?/g, '\n').split('\n').map(line => [...line]);
   if (lines.length === 1) lines[0] = prefix.concat(lines[0], suffix);
   else {
     lines[0] = prefix.concat(lines[0]);
