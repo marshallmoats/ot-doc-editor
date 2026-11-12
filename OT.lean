@@ -1230,7 +1230,7 @@ theorem j00_inl_setK (o : Op α) (a a' : K) (s : Side) (l : List (Block α K))
   | cons b bs =>
     simp only [validAt, Core.validHead] at hx hy
     simp [Joint, BOp.transform, BOp.apply, BOp.Valid, applyAt, validAt,
-      Core.applyHead, Core.validHead]
+      Core.applyHead, Core.validHead, hx, hy]
 
 theorem j00_setK_setK (a1 b1 a2 b2 : K) (s : Side) (l : List (Block α K))
     (hx : validAt 0 (.setK a1 b1) l) (hy : validAt 0 (.setK a2 b2) l) :
@@ -1241,7 +1241,7 @@ theorem j00_setK_setK (a1 b1 a2 b2 : K) (s : Side) (l : List (Block α K))
     simp only [validAt, Core.validHead] at hx hy
     cases s <;>
     simp [Joint, Side.flip, BOp.transform, BOp.apply, BOp.Valid, applyAt, validAt,
-      Core.applyHead, Core.validHead, hx, hy]
+      Core.applyHead, Core.validHead]
 
 theorem j00_setK_split (a a' : K) (q : Nat) (k : K) (s : Side) (l : List (Block α K))
     (hx : validAt 0 (.setK a a') l) (hy : validAt 0 (.split q k) l) :
