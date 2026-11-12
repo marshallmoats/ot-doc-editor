@@ -41,8 +41,14 @@ makes protocol ordering explicit and rejects mismatched acknowledgements.
 
 ## Not yet implemented
 
-The collaboration core is not yet connected to a network transport or the
-browser UI. The next milestone is a versioned server protocol with client
-identity/request IDs, ordered acknowledgements and remote broadcasts, followed
-by two-client integration tests. Do not treat this as a production-ready
-multi-user editor until those tests pass.
+`Editor/Collaboration/Server.lean` adds a transport-independent, revisioned
+server boundary. It accepts edits against historical snapshots, transforms them
+over the intervening server log, preserves the server replay-validity proof,
+and returns receipts carrying client/request identity and the new revision. A
+Lean smoke scenario submits two edits from revision zero and exercises the
+server's total ordering.
+
+The server boundary is not yet wired to HTTP/WebSocket transport or the browser
+UI. Authentication, request de-duplication, persistence, remote delivery, and
+two-browser convergence tests remain. Do not treat this as a production-ready
+multi-user editor until those pieces and tests are complete.
