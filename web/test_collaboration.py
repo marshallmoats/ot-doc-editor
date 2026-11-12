@@ -98,6 +98,14 @@ def main():
         assert submitted["acceptedCount"] == 1
         assert submitted["acceptedEdit"] == batch
         assert submitted["changes"] == []
+        duplicate = call({
+            "cmd": "submitOps", "baseRevision": 4,
+            "clientId": "alice", "requestId": "alice-batch-1",
+            "ops": batch
+        })
+        assert duplicate["rev"] == 5
+        assert duplicate["acceptedEdit"] == batch
+        assert duplicate["changes"] == []
         since_four = call({"cmd": "state", "since": 4})
         assert since_four["changes"] == [batch]
         assert since_four["doc"] == submitted["doc"]
