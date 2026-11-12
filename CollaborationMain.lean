@@ -22,8 +22,8 @@ def collabStateJson (s : CollaborationServer) : Json :=
     ("ok", Json.bool true),
     ("doc", collabDocJson s.srv.doc),
     ("rev", toJson s.revision),
-    ("canUndo", Json.bool false),
-    ("canRedo", Json.bool false),
+    ("canUndo", Json.bool (!s.undoHistory.isEmpty)),
+    ("canRedo", Json.bool (!s.redoHistory.isEmpty)),
     ("cursor", Json.null)
   ]
 
@@ -47,6 +47,14 @@ def collabHandle (s : CollaborationServer) (line : String) :
     match j.getObjValAs? String "cmd" with
     | .error _ => (collabError "missing cmd", s)
     | .ok "state" => (collabStateJson s, s)
+    | .ok "undo" =>
+      match s.undo with
+      | none => (collabError "nothing to undo", s)
+      | some next => (collabStateJson next, next)
+    | .ok "redo" =>
+      match s.redo with
+      | none => (collabError "nothing to redo", s)
+      | some next => (collabStateJson next, next)
     | .ok "setKind" =>
       match j.getObjValAs? Nat "baseRevision",
           j.getObjValAs? String "clientId",
@@ -85,8 +93,8 @@ def collabHandle (s : CollaborationServer) (line : String) :
                   ("acceptedRevision", toJson receipt.revision),
                   ("doc", collabDocJson receipt.document),
                   ("rev", toJson receipt.revision),
-                  ("canUndo", Json.bool false),
-                  ("canRedo", Json.bool false),
+                  ("canUndo", Json.bool (!next.undoHistory.isEmpty)),
+                  ("canRedo", Json.bool (!next.redoHistory.isEmpty)),
                   ("cursor", Json.null)
                 ]
                 (response, next)
@@ -124,8 +132,8 @@ def collabHandle (s : CollaborationServer) (line : String) :
                 ("acceptedRevision", toJson receipt.revision),
                 ("doc", collabDocJson receipt.document),
                 ("rev", toJson receipt.revision),
-                ("canUndo", Json.bool false),
-                ("canRedo", Json.bool false),
+                ("canUndo", Json.bool (!next.undoHistory.isEmpty)),
+                ("canRedo", Json.bool (!next.redoHistory.isEmpty)),
                 ("cursor", Json.null)
               ]
               (response, next)

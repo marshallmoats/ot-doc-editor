@@ -33,6 +33,10 @@ structure SubmitReceipt where
 structure CollaborationServer where
   srv : BSrv
   wf : srv.Wf
+  /-- Accepted edit revisions available to the room-wide undo command. -/
+  undoHistory : List Nat
+  /-- Pairs of (original revision, undo-record revision) available to redo. -/
+  redoHistory : List (Nat × Nat)
 
 namespace CollaborationServer
 
@@ -40,6 +44,8 @@ namespace CollaborationServer
 def init (doc : BDoc) : CollaborationServer where
   srv := ⟨doc, []⟩
   wf := trivial
+  undoHistory := []
+  redoHistory := []
 
 /-- Current monotonically increasing server revision. -/
 def revision (s : CollaborationServer) : Nat :=
@@ -57,7 +63,7 @@ def submit (s : CollaborationServer) (base : Nat) (edit : BOps)
     CollaborationServer × BOps := by
   let next := s.srv.submit base edit
   have hnext : next.1.Wf := s.srv.submit_wf s.wf base edit hedit
-  exact (⟨next.1, hnext⟩, next.2)
+  exact (⟨next.1, hnext, s.revision :: s.undoHistory, []⟩, next.2)
 
 /-- The transformed edit returned by submit is valid at the previous head. -/
 theorem submit_accepted_valid (s : CollaborationServer) (base : Nat)
@@ -83,6 +89,41 @@ def accept (s : CollaborationServer) (request : SubmitRequest)
     acceptedEdit := accepted
     document := next.srv.doc
   })
+
+
+/-- Undo the most recently accepted edit in the shared room. The inverse is
+transformed over every later server operation by the verified selective-undo
+algorithm in `Server.undo`. -/
+def undo (s : CollaborationServer) : Option CollaborationServer :=
+  match s.undoHistory with
+  | [] => none
+  | target :: rest =>
+    match h : s.srv.log[target]? with
+    | none => none
+    | some edit =>
+      let next := s.srv.undo target
+      some {
+        srv := next
+        wf := Server.undo_wf s.srv s.wf target edit h
+        undoHistory := rest
+        redoHistory := (target, s.revision) :: s.redoHistory
+      }
+
+/-- Redo the most recently undone edit by selectively undoing its undo record. -/
+def redo (s : CollaborationServer) : Option CollaborationServer :=
+  match s.redoHistory with
+  | [] => none
+  | (target, undoRevision) :: rest =>
+    match h : s.srv.log[undoRevision]? with
+    | none => none
+    | some undoEdit =>
+      let next := s.srv.undo undoRevision
+      some {
+        srv := next
+        wf := Server.undo_wf s.srv s.wf undoRevision undoEdit h
+        undoHistory := target :: s.undoHistory
+        redoHistory := rest
+      }
 
 end CollaborationServer
 

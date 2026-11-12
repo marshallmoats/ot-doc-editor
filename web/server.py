@@ -11,6 +11,7 @@ import re
 import subprocess
 import sys
 import threading
+import time
 from collections import OrderedDict
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlsplit
@@ -29,6 +30,18 @@ EXE = built_executable("ot-editor", "OT_EXE")
 COLLAB_EXE = built_executable("ot-collab", "OT_COLLAB_EXE")
 MAX_BODY = 1 << 20
 ROOM_RE = re.compile(r"^[A-Za-z0-9_-]{1,64}$")
+
+
+def configured_collaboration_delay():
+    """Return the optional pre-serialization delay for room mutations."""
+    raw = os.environ.get("OT_COLLAB_DELAY_MS", "0")
+    try:
+        delay_ms = int(raw)
+    except ValueError:
+        raise SystemExit("OT_COLLAB_DELAY_MS must be an integer from 0 to 60000")
+    if not 0 <= delay_ms <= 60000:
+        raise SystemExit("OT_COLLAB_DELAY_MS must be an integer from 0 to 60000")
+    return delay_ms
 
 
 class JsonLineProcess:
@@ -115,7 +128,7 @@ class Rooms:
             return room
 
 
-def make_handler(backend, rooms):
+def make_handler(backend, rooms, collab_delay_ms=0):
     class Handler(BaseHTTPRequestHandler):
         def _send(self, code, body, ctype):
             data = body if isinstance(body, bytes) else body.encode("utf-8")
@@ -168,6 +181,11 @@ def make_handler(backend, rooms):
                 room = rooms.get(room_name)
             except ValueError as e:
                 return self._json(400, {"ok": False, "error": str(e)})
+            # Sleep before entering the room's serialization lock. Concurrent
+            # requests therefore remain in flight together and can race for
+            # acceptance order instead of being delayed one-by-one.
+            if collab_delay_ms:
+                time.sleep(collab_delay_ms / 1000)
             return self._json(200, room.submit(msg))
 
         def log_message(self, fmt, *args):
@@ -184,9 +202,10 @@ def main():
         sys.exit(f"collaboration backend not found at {COLLAB_EXE}\nbuild it first with `lake build`")
     port = int(sys.argv[1]) if len(sys.argv) > 1 else 8000
     host = os.environ.get("OT_HOST", "127.0.0.1")
+    delay_ms = configured_collaboration_delay()
     server = ThreadingHTTPServer((host, port),
-                                 make_handler(Backend(EXE), Rooms(COLLAB_EXE)))
-    print(f"editor running at http://{host}:{server.server_address[1]}  (Ctrl+C to stop)")
+                                 make_handler(Backend(EXE), Rooms(COLLAB_EXE), delay_ms))
+    print(f"editor running at http://{host}:{server.server_address[1]}  (collaboration delay: {delay_ms} ms; Ctrl+C to stop)")
     try:
         server.serve_forever()
     except KeyboardInterrupt:
