@@ -165,7 +165,10 @@ def acknowledgePrefixLength (c : ClientState) (n : Nat) :
   if h : n ≤ c.pending.length then
     let accepted := c.pending.take n
     let rest := c.pending.drop n
-    some (c.acknowledge accepted rest (by simp))
+    have hprefix : c.pending = accepted ++ rest := by
+      dsimp [accepted, rest]
+      exact (List.take_append_drop n c.pending).symm
+    some (c.acknowledge accepted rest hprefix)
   else
     none
 
