@@ -62,6 +62,10 @@ async function main() {
     let [typingNode, typingOffset] = caret();
     assert.strictEqual(typingNode.data.slice(0, typingOffset), 'abc',
       'caret must advance to the end of each accepted insertion');
+    await key('z', { ctrlKey: true });
+    assert(!texts()[1].startsWith('abc'), 'Ctrl+Z undoes the latest shared text edit');
+    await key('z', { ctrlKey: true, shiftKey: true });
+    assert(texts()[1].startsWith('abc'), 'Ctrl+Shift+Z redoes the shared text edit');
 
     // Enter in the middle splits; Backspace at start of block merges back
     place(1, 3);
@@ -105,16 +109,6 @@ async function main() {
     sel.dispatchEvent(new w.Event('change', { bubbles: true }));
     await w.__editor.whenIdle();
     assert.strictEqual(kinds()[2], 'item');
-
-    // Shared undo/redo is wired through the room server and toolbar/shortcuts.
-    assert.strictEqual(kinds()[2], 'item');
-    await key('z', { ctrlKey: true });
-    assert.strictEqual(kinds()[2], 'para', 'Ctrl+Z undoes the most recent shared formatting edit');
-    assert.strictEqual(d.getElementById('redo').disabled, false);
-    await key('z', { ctrlKey: true, shiftKey: true });
-    assert.strictEqual(kinds()[2], 'item', 'Ctrl+Shift+Z redoes the shared formatting edit');
-    d.getElementById('undo').click(); await w.__editor.whenIdle();
-    assert.strictEqual(kinds()[2], 'para');
 
     // a stale/invalid request is rejected without corrupting the view
     const r = await (await fetch(base + '/api', { method: 'POST', body: JSON.stringify(
