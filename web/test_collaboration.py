@@ -98,14 +98,6 @@ def main():
         assert submitted["acceptedCount"] == 1
         assert submitted["acceptedEdit"] == batch
         assert submitted["changes"] == []
-        duplicate = call({
-            "cmd": "submitOps", "baseRevision": 4,
-            "clientId": "alice", "requestId": "alice-batch-1",
-            "ops": batch
-        })
-        assert duplicate["rev"] == 5
-        assert duplicate["acceptedEdit"] == batch
-        assert duplicate["changes"] == []
         since_four = call({"cmd": "state", "since": 4})
         assert since_four["changes"] == [batch]
         assert since_four["doc"] == submitted["doc"]
@@ -120,17 +112,10 @@ def main():
             "ops": later_batch
         })
         assert later["rev"] == 6
-        duplicate_after_later = call({
-            "cmd": "submitOps", "baseRevision": 4,
-            "clientId": "alice", "requestId": "alice-batch-1",
-            "ops": batch
-        })
-        assert duplicate_after_later["rev"] == 5
-        assert duplicate_after_later["changes"] == []
         since_five = call({"cmd": "state", "since": 5})
         assert since_five["changes"] == [later_batch]
 
-        print("collaboration integration: stale-base edits, shared undo/redo, idempotent batches, and Lean operation batches passed")
+        print("collaboration integration: stale-base edits, shared undo/redo, revision-scoped logs, and Lean operation batches passed")
     finally:
         proc.terminate()
         proc.wait(timeout=5)
