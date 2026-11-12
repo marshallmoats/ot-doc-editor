@@ -123,6 +123,38 @@ async function main() {
       { cmd: 'replace', from: { block: 50, offset: 0 }, to: { block: 50, offset: 0 }, text: 'x' }) })).json();
     assert.strictEqual(r.ok, false);
 
+    // Two browser clients edit the same position concurrently. The client-side
+    // pending queue must rebase one edit over the other's accepted operation.
+    const openRoom = async room => JSDOM.fromFile(path.join(__dirname, 'index.html'), {
+      url: base + '/?room=' + room, runScripts: 'dangerously', resources: 'usable',
+      pretendToBeVisual: true,
+      beforeParse(win) { win.fetch = (u, o) => fetch(base + u, o); },
+    });
+    const d1 = await openRoom('ot-race'), d2 = await openRoom('ot-race');
+    const w1 = d1.window, w2 = d2.window;
+    await sleep(250);
+    const typeAtStart = (win, ch) => {
+      const ed2 = win.document.getElementById('editor');
+      const range = win.document.createRange(), text = ed2.children[1].firstChild;
+      range.setStart(text, 0); range.collapse(true);
+      win.getSelection().removeAllRanges(); win.getSelection().addRange(range);
+      ed2.dispatchEvent(new win.InputEvent('beforeinput', {
+        inputType: 'insertText', data: ch, bubbles: true, cancelable: true,
+      }));
+      return ed2.children[1].textContent;
+    };
+    assert(typeAtStart(w1, 'A').startsWith('A'));
+    assert(typeAtStart(w2, 'B').startsWith('B'));
+    await Promise.all([w1.__editor.whenIdle(), w2.__editor.whenIdle()]);
+    await sleep(450); // allow the peer polling cycle to integrate the final revision
+    const authoritative = await (await fetch(base + '/collab?room=ot-race')).json();
+    assert(authoritative.ok);
+    assert(authoritative.doc[1].text.includes('A') && authoritative.doc[1].text.includes('B'),
+      'server retains both concurrent edits');
+    assert.deepStrictEqual(w1.__editor.state.doc, authoritative.doc);
+    assert.deepStrictEqual(w2.__editor.state.doc, authoritative.doc);
+    d1.window.close(); d2.window.close();
+
     console.log('frontend end-to-end tests passed');
     w.close();
   } finally { server.kill(); }
