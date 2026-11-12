@@ -65,10 +65,10 @@ def bridgeOpsData (ops : BOps) : Data :=
 
 def bridgeDocData (doc : BDoc) : Data :=
   .array ((doc.map fun block =>
-    .object #[
+    Data.object #[
       ("kind", .string (bridgeKindName block.kind)),
       ("text", .string (String.ofList block.text))
-    ] : Data)).toArray
+    ]).toArray)
 
 def bridgeSnapshot (c : ClientState) : Data :=
   .object #[
