@@ -33,7 +33,8 @@ def bridgeString? (data : Data) (key : String) : Option String :=
 
 def bridgeNat? (data : Data) (key : String) : Option Nat :=
   match data.field key with
-  | .number value => some value.toUInt64.toNat
+  | .number value =>
+    if value >= 0 && value.floor == value then some value.toUInt64.toNat else none
   | _ => none
 
 def bridgeCoreData : Core Char Kind → Data
