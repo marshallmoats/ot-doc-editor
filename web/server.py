@@ -157,6 +157,10 @@ def make_handler(backend, rooms, collab_delay_ms=0):
             if parsed.path in ("/", "/index.html"):
                 with open(os.path.join(ROOT, "index.html"), "rb") as f:
                     return self._send(200, f.read(), "text/html; charset=utf-8")
+            if parsed.path in ("/ot_client.js", "/editor.js"):
+                name = parsed.path.lstrip("/")
+                with open(os.path.join(ROOT, name), "rb") as f:
+                    return self._send(200, f.read(), "text/javascript; charset=utf-8")
             if parsed.path == "/collab":
                 room_name = parse_qs(parsed.query).get("room", ["demo"])[0]
                 try:
