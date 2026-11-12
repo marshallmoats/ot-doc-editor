@@ -226,6 +226,11 @@ def bridgeLiveInputDecoder : Decoder (Handled BridgeMsg) :=
     | "historyRedo" => some ⟨.serverAction "redo", true, false⟩
     | _ => some ⟨.ignoreInput, true, false⟩
 
+def bridgeBlockLength (doc : BDoc) (i : Nat) : Nat :=
+  match doc[i]? with
+  | some block => block.text.length
+  | none => 0
+
 def bridgeApplyLiveInput (c : ClientState) (input : LiveInput) : Option ClientState := do
   let i := input.fromBlock
   let p := input.fromOffset
@@ -240,11 +245,11 @@ def bridgeApplyLiveInput (c : ClientState) (input : LiveInput) : Option ClientSt
     | "deleteContentBackward" | "deleteByCut" =>
         if i != j || p != q then some (i, p, j, q, "")
         else if p > 0 then some (i, p - 1, j, q, "")
-        else if i > 0 then some (i - 1, c.doc[i - 1]!.text.length, j, q, "")
+        else if i > 0 then some (i - 1, bridgeBlockLength c.doc (i - 1), j, q, "")
         else none
     | "deleteContentForward" =>
         if i != j || p != q then some (i, p, j, q, "")
-        else if p < c.doc[i]!.text.length then some (i, p, j, q + 1, "")
+        else if p < bridgeBlockLength c.doc i then some (i, p, j, q + 1, "")
         else if i + 1 < c.doc.length then some (i, p, i + 1, 0, "")
         else none
     | _ => none
@@ -301,7 +306,7 @@ def bridgeBlocksView : Nat → BDoc → List (Html BridgeMsg)
 
 def bridgeView (c : ClientState) : Html BridgeMsg :=
   html! <div id="editor-content" contenteditable="true" spellcheck="false" role="textbox" aria-multiline="true" aria-label="Document" {custom "beforeinput" bridgeLiveInputDecoder}>
-    {(List.range c.doc.length).map fun i => bridgeBlockView i c.doc[i]!}
+    {bridgeBlocksView 0 c.doc}
   </div>
 
 def bridgeApp : App Unit ClientState BridgeMsg :=
