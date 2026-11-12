@@ -152,9 +152,24 @@ def collaborationSmoke : ClientState := by
   let a : BOps := [.blk 0 (.inl (.ins 0 '!'))]
   have ha : ValidSeq a c0.doc := by decide
   let c1 := c0.applyLocal a ha
-  let remote : BOps := [.blk 2 (.inl (.ins 0 '?'))]
+  let b : BOps := [.blk 2 (.inl (.ins 0 '?'))]
+  have hb : ValidSeq b c1.doc := by decide
+  let c2 := c1.applyLocal b hb
+  let remote : BOps := [.blk 1 (.inl (.ins 0 '#'))]
   have hr : ValidSeq remote initialDoc := by decide
-  exact c1.receiveRemote remote hr
+  exact c2.receiveRemote remote hr
 
 #eval (collaborationSmoke.revision, collaborationSmoke.pending.length,
   String.intercalate "\\n\\n" (collaborationSmoke.doc.map fun b => String.ofList b.text))
+
+/-- Acknowledging the first rebased local edit retires only that queue prefix. -/
+def collaborationAckSmoke : ClientState := by
+  let c := collaborationSmoke
+  let accepted := c.pending.take 1
+  let rest := c.pending.drop 1
+  have hp : c.pending = accepted ++ rest := by
+    simp [accepted, rest]
+  exact c.acknowledge accepted rest hp
+
+#eval (collaborationAckSmoke.revision, collaborationAckSmoke.pending.length,
+  String.intercalate "\\n\\n" (collaborationAckSmoke.doc.map fun b => String.ofList b.text))
