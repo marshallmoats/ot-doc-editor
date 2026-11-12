@@ -943,23 +943,11 @@ theorem deleteAt_append_right : ∀ (t t2 : List α) (p : Nat),
 
 theorem take_append_len (t t2 : List α) (p : Nat) :
     (t ++ t2).take (t.length + p) = t ++ t2.take p := by
-  induction t with
-  | nil => simp
-  | cons x xs ih =>
-      have hn : (x :: xs).length + p = (xs.length + p) + 1 := by simp; omega
-      rw [hn, List.take_succ_cons]
-      simp only [List.append_cons]
-      congr 1
-      exact ih
+  exact List.take_length_add_append p
 
 theorem drop_append_len (t t2 : List α) (p : Nat) :
     (t ++ t2).drop (t.length + p) = t2.drop p := by
-  induction t with
-  | nil => simp
-  | cons x xs ih =>
-      have hn : (x :: xs).length + p = (xs.length + p) + 1 := by simp; omega
-      rw [hn, List.drop_succ_cons]
-      exact ih
+  exact List.drop_length_add_append p
 
 end ListLemmas
 
