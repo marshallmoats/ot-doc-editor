@@ -71,8 +71,7 @@
     </select>
     <span id="status" role="alert"></span>
   </div>
-  <div id="editor" contenteditable="true" spellcheck="false" role="textbox" aria-multiline="true" aria-label="Document"></div>
-  <div id="lean-client" hidden></div>
+  <div id="editor" contenteditable="true" spellcheck="false" role="textbox" aria-multiline="true" aria-label="Document"><div id="editor-content"></div></div>
   <p class="hint">Edits and shared undo/redo are validated by the Lean room server.
     Use <kbd>Ctrl</kbd>/<kbd>⌘</kbd>+<kbd>Z</kbd> to undo and <kbd>Shift</kbd>+<kbd>Z</kbd> or <kbd>Y</kbd> to redo.</p>
 </div>
@@ -82,6 +81,7 @@
 'use strict';
 
 const editor = document.getElementById('editor');
+let editorContent = document.getElementById('editor-content');
 const els = {
   undo: document.getElementById('undo'), redo: document.getElementById('redo'),
   kind: document.getElementById('kind'), rev: document.getElementById('rev'),
@@ -119,10 +119,12 @@ function blockEl(b, i) {
 }
 
 function render() {
-  const frag = document.createDocumentFragment();
-  state.doc.forEach((b, i) => frag.appendChild(blockEl(b, i)));
-  while (editor.firstChild) editor.removeChild(editor.firstChild);
-  editor.appendChild(frag);
+  if (!window.__leanBridgeReady) {
+    const frag = document.createDocumentFragment();
+    state.doc.forEach((b, i) => frag.appendChild(blockEl(b, i)));
+    while (editorContent.firstChild) editorContent.removeChild(editorContent.firstChild);
+    editorContent.appendChild(frag);
+  }
   els.undo.disabled = !state.canUndo || state.pendingCount > 0;
   els.redo.disabled = !state.canRedo || state.pendingCount > 0;
   els.rev.textContent = 'rev ' + state.rev;
@@ -144,7 +146,7 @@ function showError(msg) {
 /* ---- selection <-> (block, code point offset) ---- */
 function blockOf(node) {
   while (node && node !== editor) {
-    if (node.parentNode === editor) return node;
+    if (node.parentNode === editorContent) return node;
     node = node.parentNode;
   }
   return null;
@@ -152,8 +154,8 @@ function blockOf(node) {
 
 function domToPos(node, off) {
   if (!node) return null;
-  if (node === editor) {
-    const n = editor.children.length;
+  if (node === editor || node === editorContent) {
+    const n = editorContent.children.length;
     if (n === 0) return { block: 0, offset: 0 };
     if (off >= n) return { block: n - 1, offset: blockLen(n - 1) };
     return { block: off, offset: 0 };
@@ -181,7 +183,7 @@ function setCaret(pos) {
   if (n === 0) return;
   const b = Math.min(pos.block, n - 1);
   const o = Math.min(pos.offset, blockLen(b));
-  const el = editor.children[b];
+  const el = editorContent.children[b];
   const t = el.firstChild;
   const range = document.createRange();
   if (t && t.nodeType === 3) range.setStart(t, cpToIdx(t.data, o));
@@ -349,27 +351,15 @@ editor.addEventListener('compositionend', e => {
   if (c) enqueue({ type: 'compose', from: c.from, to: c.to, text: e.data || '' });
 });
 
-editor.addEventListener('beforeinput', e => {
-  if (e.isComposing || composing) return;   // let the IME work; committed at compositionend
-  e.preventDefault();
-  switch (e.inputType) {
-    case 'insertText': if (e.data) enqueue({ type: 'text', text: e.data }); break;
-    case 'insertParagraph': case 'insertLineBreak': enqueue({ type: 'text', text: '\n' }); break;
-    case 'insertFromPaste': case 'insertFromDrop': case 'insertReplacementText': {
-      const t = e.dataTransfer ? e.dataTransfer.getData('text/plain') : e.data;
-      if (t) enqueue({ type: 'text', text: t });
-      break;
-    }
-    case 'deleteContentBackward': enqueue({ type: 'backspace' }); break;
-    case 'deleteContentForward': enqueue({ type: 'delete' }); break;
-    case 'deleteWordBackward': enqueue({ type: 'wordBack' }); break;
-    case 'deleteWordForward': enqueue({ type: 'wordFwd' }); break;
-    case 'deleteByCut': enqueue({ type: 'cut' }); break;
-    case 'historyUndo': enqueue({ type: 'undo' }); break;
-    case 'historyRedo': enqueue({ type: 'redo' }); break;
-    default: break;   // formatting commands etc. are not supported
-  }
-});
+// Read browser selection and clipboard payload only. The delegated Lasm
+// listener sends these facts to Lean, which constructs and applies the edit.
+document.addEventListener('beforeinput', e => {
+  if (!editor.contains(e.target)) return;
+  const range = currentRange();
+  e.otFromBlock = range.from.block; e.otFromOffset = range.from.offset;
+  e.otToBlock = range.to.block; e.otToOffset = range.to.offset;
+  e.otData = e.data || (e.dataTransfer ? e.dataTransfer.getData('text/plain') : '');
+}, true);
 
 editor.addEventListener('cut', e => {
   const { from, to } = currentRange();
@@ -410,6 +400,7 @@ window.__editorBridgeSnapshot = raw => {
   }
 };
 window.__editorBridgeError = message => showError(String(message));
+window.__editorServerAction = action => enqueue({ type: String(action) });
 
 async function flushPending() {
   if (networkBusy || failedFlush || !roomReady || !window.__leanBridgeReady) return;
@@ -476,6 +467,7 @@ async function flushPending() {
 
 if (window.__leanBridgeReady) {
   window.__leanBridgeReady.then(async bridge => {
+    editorContent = document.getElementById('editor-content');
     await bridge.ports['snapshot-request'].send('ready');
     const r = await api({ cmd: 'state' });
     if (!r.ok) throw new Error(r.error || 'cannot load room state');

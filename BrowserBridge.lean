@@ -13,7 +13,18 @@ open OT
 open Lasm.UI
 open Lasm.JS
 
+structure LiveInput where
+  inputType : String
+  data : String
+  composing : Bool
+  fromBlock : Nat
+  fromOffset : Nat
+  toBlock : Nat
+  toOffset : Nat
+
 inductive BridgeMsg where
+  | serverAction (action : String)
+  | liveInput (input : LiveInput)
   | intent (data : Data)
   | remote (data : Data)
   | acknowledge (data : Data)
@@ -185,11 +196,68 @@ def bridgeAckInfo (data : Data) : Option (BOps × Nat) := do
   let revision ← bridgeNat? data "acceptedRevision"
   pure (accepted, revision)
 
+
+def bridgeEvNat (v : EvVal) : Option Nat :=
+  match v.toInt? with
+  | some n => if n >= 0 then some n.toNat else none
+  | none => none
+
+def bridgeNatDecoder (key : String) : Decoder Nat :=
+  Decoder.field [key] bridgeEvNat
+
+def bridgeLiveInputDecoder : Decoder (Handled BridgeMsg) :=
+  let decoder : Decoder LiveInput :=
+    LiveInput.mk <$> Decoder.string ["inputType"]
+      <*> Decoder.field ["otData"] (fun v => some (v.toString?.getD ""))
+      <*> Decoder.bool ["isComposing"]
+      <*> bridgeNatDecoder "otFromBlock"
+      <*> bridgeNatDecoder "otFromOffset"
+      <*> bridgeNatDecoder "otToBlock"
+      <*> bridgeNatDecoder "otToOffset"
+  decoder.filterMap fun input =>
+    if input.composing then none else
+    match input.inputType with
+    | "insertText" | "insertParagraph" | "insertLineBreak"
+    | "insertFromPaste" | "insertFromDrop" | "insertReplacementText"
+    | "deleteContentBackward" | "deleteContentForward" | "deleteByCut" =>
+        some ⟨.liveInput input, true, false⟩
+    | "historyUndo" => some ⟨.serverAction "undo", true, false⟩
+    | "historyRedo" => some ⟨.serverAction "redo", true, false⟩
+    | _ => none
+
+def bridgeApplyLiveInput (c : ClientState) (input : LiveInput) : Option ClientState := do
+  let i := input.fromBlock
+  let p := input.fromOffset
+  let j := input.toBlock
+  let q := input.toOffset
+  if i >= c.doc.length || j >= c.doc.length then none else
+  let (a, b, d, e, txt) ←
+    match input.inputType with
+    | "insertText" | "insertFromPaste" | "insertFromDrop" | "insertReplacementText" =>
+        some (i, p, j, q, input.data)
+    | "insertParagraph" | "insertLineBreak" => some (i, p, j, q, "\\n")
+    | "deleteContentBackward" | "deleteByCut" =>
+        if i != j || p != q then some (i, p, j, q, "")
+        else if p > 0 then some (i, p - 1, j, q, "")
+        else if i > 0 then some (i - 1, c.doc[i - 1]!.text.length, j, q, "")
+        else none
+    | "deleteContentForward" =>
+        if i != j || p != q then some (i, p, j, q, "")
+        else if p < c.doc[i]!.text.length then some (i, p, j, q + 1, "")
+        else if i + 1 < c.doc.length then some (i, p, i + 1, 0, "")
+        else none
+    | _ => none
+  c.applyReplace a b d e txt
+
 def bridgeInit (_ : Unit) : ClientState × Cmd BridgeMsg :=
   let c := ClientState.init initialDoc
   (c, Cmd.port "snapshot" (bridgeSnapshot c))
 
 def bridgeUpdate : BridgeMsg → ClientState → ClientState × Cmd BridgeMsg
+  | .liveInput input, c =>
+    match bridgeApplyLiveInput c input with
+    | none => (c, Cmd.port "snapshot" (bridgeErrorData "Lean rejected the browser input"))
+    | some next => (next, Cmd.port "snapshot" (bridgeSnapshot next))
   | .intent data, c =>
     match bridgeIntent c data with
     | none =>
@@ -208,6 +276,7 @@ def bridgeUpdate : BridgeMsg → ClientState → ClientState × Cmd BridgeMsg
       | none => (c, Cmd.port "snapshot" (bridgeErrorData "Server acknowledgement does not match the pending prefix"))
       | some next =>
         (next, Cmd.port "snapshot" (bridgeSnapshot next))
+  | .serverAction action, c => (c, Cmd.port "action" (.string action))
   | .snapshotRequest, c =>
     (c, Cmd.port "snapshot" (bridgeSnapshot c))
 
@@ -219,8 +288,15 @@ def bridgeSubscriptions (_ : ClientState) : Subs BridgeMsg :=
     Subs.port "snapshot-request" fun _ => some .snapshotRequest
   ]
 
-def bridgeView (_ : ClientState) : Html BridgeMsg :=
-  html! <div></div>
+def bridgeBlockView (i : Nat) (block : Block Char Kind) : Html BridgeMsg :=
+  html! <div class={"block k-" ++ bridgeKindName block.kind} data-i={toString i} key={toString i}>
+    {String.ofList block.text}
+  </div>
+
+def bridgeView (c : ClientState) : Html BridgeMsg :=
+  html! <div id="editor-content" {custom "beforeinput" bridgeLiveInputDecoder}>
+    {(List.range c.doc.length).map fun i => bridgeBlockView i c.doc[i]!}
+  </div>
 
 def bridgeApp : App Unit ClientState BridgeMsg :=
   App.element bridgeInit bridgeUpdate bridgeView bridgeSubscriptions

@@ -182,9 +182,10 @@ def make_handler(backend, rooms, collab_delay_ms=0):
                     module = f"""<script type="module">
 import {{ mount }} from "/dist/{loader}";
 try {{
-  const app = await mount(document.getElementById("lean-client"));
+  const app = await mount(document.getElementById("editor"));
   window.__resolveLeanBridge(app);
   app.ports.snapshot.subscribe(raw => window.__editorBridgeSnapshot?.(raw));
+  app.ports.action.subscribe(action => window.__editorServerAction?.(action));
 }} catch (error) {{
   window.__rejectLeanBridge(error);
   window.__editorBridgeError?.(String(error));
