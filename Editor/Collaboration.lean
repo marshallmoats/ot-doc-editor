@@ -178,3 +178,24 @@ def collaborationSmoke : ClientState := by
 
 #eval (collaborationSmoke.revision, collaborationSmoke.pending.length,
   String.intercalate "\\n\\n" (collaborationSmoke.doc.map fun b => String.ofList b.text))
+
+/-! ## Browser intent-builder checks
+
+These are compile-time checks for the exact entry points used by the browser
+bridge. A valid replacement and kind change enter the optimistic queue; an
+invalid range is rejected without changing the client.
+-/
+
+example : (ClientState.init initialDoc).applyReplace 0 0 0 0 "x" |>.isSome := by
+  decide
+
+example :
+    (((ClientState.init initialDoc).applyReplace 0 0 0 0 "x").getD
+      (ClientState.init initialDoc)).pending.length = 1 := by
+  decide
+
+example : (ClientState.init initialDoc).applySetKind 0 .para |>.isSome := by
+  decide
+
+example : (ClientState.init initialDoc).applyReplace 99 0 99 0 "x" = none := by
+  decide
