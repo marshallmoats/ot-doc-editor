@@ -1,0 +1,164 @@
+import assert from "node:assert/strict";
+import { readdirSync } from "node:fs";
+import { readFile } from "node:fs/promises";
+import { join } from "node:path";
+import { fileURLToPath, pathToFileURL } from "node:url";
+import { JSDOM } from "jsdom";
+import { TextDecoder, TextEncoder } from "node:util";
+
+const root = process.cwd();
+const dist = join(root, "dist");
+const loader = readdirSync(dist).find(
+  name => name.startsWith("app.") && name.endsWith(".js")
+);
+assert.ok(loader, "missing generated Lasm app loader");
+
+const dom = new JSDOM('<!doctype html><html><body><div id="root"></div></body></html>', {
+  url: "http://127.0.0.1/",
+  pretendToBeVisual: true
+});
+for (const name of [
+  "window", "document", "navigator", "HTMLElement", "Element", "Node",
+  "Text", "Document", "MutationObserver", "Event", "CustomEvent",
+  "DOMParser", "getComputedStyle"
+]) {
+  const value = name === "getComputedStyle"
+    ? dom.window.getComputedStyle.bind(dom.window)
+    : dom.window[name];
+  if (value !== undefined) {
+    Object.defineProperty(globalThis, name, {
+      value, configurable: true, writable: true
+    });
+  }
+}
+globalThis.requestAnimationFrame = dom.window.requestAnimationFrame.bind(dom.window);
+globalThis.cancelAnimationFrame = dom.window.cancelAnimationFrame.bind(dom.window);
+globalThis.TextEncoder = TextEncoder;
+globalThis.TextDecoder = TextDecoder;
+globalThis.ResizeObserver ??= class {
+  observe() {}
+  unobserve() {}
+  disconnect() {}
+};
+const nativeFetch = globalThis.fetch.bind(globalThis);
+globalThis.fetch = async (input, init) => {
+  const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
+  if (url.startsWith("file://")) {
+    const bytes = await readFile(fileURLToPath(url));
+    return new Response(bytes, {
+      headers: {
+        "Content-Type": url.endsWith(".wasm") ? "application/wasm" : "application/octet-stream"
+      }
+    });
+  }
+  return nativeFetch(input, init);
+};
+dom.window.fetch = globalThis.fetch;
+
+const { mount } = await import(pathToFileURL(join(dist, loader)).href);
+const app = await mount(document.getElementById("root"));
+const snapshots = [];
+app.ports.snapshot.subscribe(snapshot => snapshots.push(snapshot));
+
+async function sendAndRead(portName, payload) {
+  const before = snapshots.length;
+  await app.ports[portName].send(payload);
+  const deadline = Date.now() + 5000;
+  while (snapshots.length === before && Date.now() < deadline) {
+    await new Promise(resolve => setTimeout(resolve, 5));
+  }
+  assert.ok(snapshots.length > before, `no Lean snapshot after ${portName}`);
+  return snapshots.at(-1);
+}
+
+await sendAndRead("snapshot-request", "ready");
+const initial = snapshots.at(-1);
+assert.equal(initial.ok, true);
+assert.equal(initial.pendingCount, 0);
+
+const firstLocal = await sendAndRead("intent", {
+  cmd: "replace",
+  from: { block: 0, offset: 0 },
+  to: { block: 0, offset: 0 },
+  text: "!"
+});
+assert.equal(firstLocal.ok, true);
+assert.equal(firstLocal.pendingCount, 1);
+
+const secondLocal = await sendAndRead("intent", {
+  cmd: "replace",
+  from: { block: 0, offset: 1 },
+  to: { block: 0, offset: 1 },
+  text: "A"
+});
+assert.equal(secondLocal.ok, true);
+assert.equal(secondLocal.pendingCount, 2);
+assert.equal(secondLocal.pendingOps.length, 2);
+
+const rebased = await sendAndRead("remote", [[{
+  tag: "blk",
+  block: 0,
+  core: { op: "ins", offset: 0, char: "?" }
+}]]);
+assert.equal(rebased.ok, true);
+assert.equal(rebased.rev, 1);
+assert.equal(rebased.pendingCount, 2);
+assert.equal(rebased.pendingOps[0].core.offset, 1);
+assert.equal(rebased.pendingOps[1].core.offset, 2);
+assert.ok(rebased.doc[0].text.startsWith("?!A"));
+
+const firstAcknowledged = await sendAndRead("ack", {
+  acceptedEdit: [{
+    tag: "blk",
+    block: 0,
+    core: { op: "ins", offset: 1, char: "!" }
+  }],
+  acceptedRevision: 2
+});
+assert.equal(firstAcknowledged.ok, true);
+assert.equal(firstAcknowledged.rev, 2);
+assert.equal(firstAcknowledged.pendingCount, 1);
+assert.equal(firstAcknowledged.pendingOps[0].core.offset, 2);
+assert.ok(firstAcknowledged.doc[0].text.startsWith("?!A"));
+
+const secondAcknowledged = await sendAndRead("ack", {
+  acceptedEdit: [{
+    tag: "blk",
+    block: 0,
+    core: { op: "ins", offset: 2, char: "A" }
+  }],
+  acceptedRevision: 3
+});
+assert.equal(secondAcknowledged.ok, true);
+assert.equal(secondAcknowledged.rev, 3);
+assert.equal(secondAcknowledged.pendingCount, 0);
+assert.ok(secondAcknowledged.doc[0].text.startsWith("?!A"));
+
+// A real DOM beforeinput event is handled synchronously by Lean. The event is
+// cancelled and the Lasm view shows the new character before this dispatch
+// returns; no JS-side optimistic document or network round trip is involved.
+const editorContent = document.getElementById("editor-content");
+assert.ok(editorContent, "Lean view did not render the production editor");
+const beforeInput = new dom.window.Event("beforeinput", {
+  bubbles: true, cancelable: true
+});
+for (const [key, value] of Object.entries({
+  inputType: "insertText", isComposing: false, otData: "X",
+  otFromBlock: 0, otFromOffset: 0, otToBlock: 0, otToOffset: 0
+})) {
+  Object.defineProperty(beforeInput, key, { value });
+}
+const snapshotCount = snapshots.length;
+assert.equal(editorContent.dispatchEvent(beforeInput), false,
+  "Lean did not prevent the browser's native contenteditable mutation");
+assert.ok(editorContent.textContent.startsWith("X?!A"),
+  "Lean's synchronous view did not display the character before dispatch returned");
+const snapshotDeadline = Date.now() + 5000;
+while (snapshots.length === snapshotCount && Date.now() < snapshotDeadline) {
+  await new Promise(resolve => setTimeout(resolve, 5));
+}
+assert.ok(snapshots.length > snapshotCount, "no Lean snapshot after synchronous DOM input");
+assert.equal(snapshots.at(-1).pendingCount, 1);
+
+dom.window.close();
+console.log("Lean/WASM browser client intent, remote rebase, and prefix acknowledgement passed");

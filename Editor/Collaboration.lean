@@ -138,6 +138,102 @@ def acknowledge (c : ClientState) (accepted rest : BOps)
   uchain := c.uchain
   rchain := c.rchain
 
+/-- Build and apply a user replacement intent at the optimistic document head.
+The browser passes only a range and text; operation construction, validation,
+and queue insertion all remain in Lean. -/
+def applyReplace (c : ClientState) (i p j q : Nat) (txt : String) :
+    Option ClientState := do
+  let edit ← replaceOps c.doc i p j q txt
+  if h : ValidSeq edit c.doc then
+    some (c.applyLocal edit h)
+  else
+    none
+
+/-- Build and apply a block-kind change at the optimistic document head. -/
+def applySetKind (c : ClientState) (i : Nat) (kind : Kind) :
+    Option ClientState := do
+  let edit ← setKindOps c.doc i kind
+  if h : ValidSeq edit c.doc then
+    some (c.applyLocal edit h)
+  else
+    none
+/-- Retire an acknowledged prefix by its operation count. The count comes from
+ the server's accepted operation batch; take/drop and the proof below ensure
+ that only that prefix advances the confirmed snapshot. -/
+def acknowledgePrefixLengthAt (c : ClientState) (n revision : Nat) :
+    Option ClientState := do
+  if h : n ≤ c.pending.length then
+    let accepted := c.pending.take n
+    let rest := c.pending.drop n
+    have hprefix : c.pending = accepted ++ rest := by
+      dsimp [accepted, rest]
+      exact (List.take_append_drop n c.pending).symm
+    let next := c.acknowledge accepted rest hprefix
+    some { next with revision := revision }
+  else
+    none
+
+/-- Acknowledge one server revision when the transport does not need to
+supply an explicit revision number. -/
+def acknowledgePrefixLength (c : ClientState) (n : Nat) :
+    Option ClientState :=
+  c.acknowledgePrefixLengthAt n (c.revision + 1)
+
+/-- Acknowledge only when the server's transformed operation batch is
+exactly the pending prefix. This avoids trusting a count when concurrent
+operations have changed the shape of the local queue. -/
+def acknowledgeAcceptedAt (c : ClientState) (accepted : BOps)
+    (revision : Nat) : Option ClientState := do
+  let n := accepted.length
+  let acceptedPrefix := c.pending.take n
+  if h : acceptedPrefix = accepted then
+    let rest := c.pending.drop n
+    have hprefix : c.pending = acceptedPrefix ++ rest := by
+      dsimp [acceptedPrefix, rest]
+      exact (List.take_append_drop n c.pending).symm
+    let next := c.acknowledge acceptedPrefix rest hprefix
+    some { next with revision := revision }
+  else
+    none
+
+
+/-- A concurrent same-position insertion must produce the same accepted
+operation on the client and server sides of the transform. -/
+example :
+    let c0 := ClientState.init initialDoc
+    let localEdit : BOps := [.blk 0 (.inl (.ins 0 '!'))]
+    let remote : BOps := [.blk 0 (.inl (.ins 0 '?'))]
+    let c1 := c0.applyLocal localEdit (by decide)
+    let c2 := c1.receiveRemote remote (by decide)
+    c2.pending = (xformSeq localEdit remote .right).1 := by
+  decide
+
+/-- The exact server-accepted batch retires the rebased local prefix, leaving
+no pending operations and preserving the converged document. -/
+example :
+    let c0 := ClientState.init initialDoc
+    let localEdit : BOps := [.blk 0 (.inl (.ins 0 '!'))]
+    let remote : BOps := [.blk 0 (.inl (.ins 0 '?'))]
+    let c1 := c0.applyLocal localEdit (by decide)
+    let c2 := c1.receiveRemote remote (by decide)
+    let accepted := (xformSeq localEdit remote .right).1
+    (c2.acknowledgeAcceptedAt accepted 2).map (·.pending.length) = some 0 := by
+  decide
+
+/-- With a second local edit already queued, acknowledging the first
+transformed batch leaves the later edit pending. -/
+example :
+    let c0 := ClientState.init initialDoc
+    let first : BOps := [.blk 0 (.inl (.ins 0 '!'))]
+    let second : BOps := [.blk 0 (.inl (.ins 1 'A'))]
+    let remote : BOps := [.blk 0 (.inl (.ins 0 '?'))]
+    let c1 := c0.applyLocal first (by decide)
+    let c2 := c1.applyLocal second (by decide)
+    let c3 := c2.receiveRemote remote (by decide)
+    let accepted := (xformSeq first remote .right).1
+    (c3.acknowledgeAcceptedAt accepted 2).map (·.pending.length) = some 1 := by
+  decide
+
 end ClientState
 
 /-! ## Executable smoke scenario
@@ -156,5 +252,33 @@ def collaborationSmoke : ClientState := by
   have hr : ValidSeq remote initialDoc := by decide
   exact c1.receiveRemote remote hr
 
-#eval (collaborationSmoke.revision, collaborationSmoke.pending.length,
-  String.intercalate "\\n\\n" (collaborationSmoke.doc.map fun b => String.ofList b.text))
+
+/-! ## Browser intent-builder checks
+
+These are compile-time checks for the exact entry points used by the browser
+bridge. A valid replacement and kind change enter the optimistic queue; an
+invalid range is rejected without changing the client.
+-/
+
+example : (ClientState.init initialDoc).applyReplace 0 0 0 0 "x" |>.isSome := by
+  decide
+
+example :
+    (((ClientState.init initialDoc).applyReplace 0 0 0 0 "x").getD
+      (ClientState.init initialDoc)).pending.length = 1 := by
+  decide
+
+example : (ClientState.init initialDoc).applySetKind 0 .para |>.isSome := by
+  decide
+
+example : (ClientState.init initialDoc).applyReplace 99 0 99 0 "x" = none := by
+  decide
+
+example :
+    (((ClientState.init initialDoc).applyReplace 0 0 0 0 "x").getD
+      (ClientState.init initialDoc)).acknowledgePrefixLength 1 |>.isSome := by
+  decide
+
+example :
+    (ClientState.init initialDoc).acknowledgePrefixLength 1 = none := by
+  decide

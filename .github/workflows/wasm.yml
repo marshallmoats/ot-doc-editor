@@ -18,12 +18,12 @@ jobs:
           node-version: 24
       - name: Install browser test dependency
         run: npm install --no-save jsdom
-      - name: Test native browser editor
-        run: node web/test_frontend.js
       - name: Test configurable collaboration delay
         run: python3 web/test_server_delay.py
       - name: Test two-client collaboration server
         run: python3 web/test_collaboration.py
+      - name: Test browser transport snapshot synchronization
+        run: node web/test_browser_transport.mjs
 
   browser-wasm:
     runs-on: ubuntu-24.04
@@ -34,3 +34,9 @@ jobs:
           node-version: 24
       - run: npm install
       - run: npm run wasm:build
+      - name: Install browser runtime test dependency
+        run: npm install --no-save jsdom
+      - name: Test Lean/WASM client port transitions
+        run: node web/test_wasm_bridge.mjs
+      - name: Test generated browser WASM serving
+        run: python3 web/test_wasm_serving.py

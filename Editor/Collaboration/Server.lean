@@ -149,6 +149,3 @@ def collaborationServerSmoke : CollaborationServer := by
   let s2 := (s1.submit 0 bob hbase1 hb1).1
   exact s2
 
-#eval (collaborationServerSmoke.revision,
-  String.intercalate "\\n\\n"
-    (collaborationServerSmoke.srv.doc.map fun b => String.ofList b.text))

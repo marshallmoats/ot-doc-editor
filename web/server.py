@@ -6,6 +6,7 @@ Rooms are in-memory demo rooms; the Lean process owns each room's revision log
 and validates/transforms every submitted edit.
 """
 import json
+import mimetypes
 import os
 import re
 import subprocess
@@ -26,7 +27,6 @@ def built_executable(name, env_name):
     candidates = [os.path.join(BUILD, name), os.path.join(BUILD, name + ".exe")]
     return next((path for path in candidates if os.path.exists(path)), candidates[0])
 
-EXE = built_executable("ot-editor", "OT_EXE")
 COLLAB_EXE = built_executable("ot-collab", "OT_COLLAB_EXE")
 MAX_BODY = 1 << 20
 ROOM_RE = re.compile(r"^[A-Za-z0-9_-]{1,64}$")
@@ -73,10 +73,6 @@ class JsonLineProcess:
             return json.loads(out)
         except json.JSONDecodeError:
             return {"ok": False, "error": "invalid response from Lean backend"}
-
-
-class Backend(JsonLineProcess):
-    """Legacy single-user editor process."""
 
 
 class CollaborationRoom(JsonLineProcess):
@@ -128,7 +124,7 @@ class Rooms:
             return room
 
 
-def make_handler(backend, rooms, collab_delay_ms=0):
+def make_handler(rooms, collab_delay_ms=0):
     class Handler(BaseHTTPRequestHandler):
         def _send(self, code, body, ctype):
             data = body if isinstance(body, bytes) else body.encode("utf-8")
@@ -154,28 +150,67 @@ def make_handler(backend, rooms, collab_delay_ms=0):
 
         def do_GET(self):
             parsed = urlsplit(self.path)
+            if parsed.path.startswith("/dist/"):
+                dist_root = os.path.realpath(os.path.join(ROOT, "..", "dist"))
+                relative = parsed.path[len("/dist/"):]
+                target = os.path.realpath(os.path.join(dist_root, relative))
+                if not target.startswith(dist_root + os.sep) or not os.path.isfile(target):
+                    return self._send(404, "not found", "text/plain")
+                content_type = "application/wasm" if target.endswith(".wasm") else (
+                    mimetypes.guess_type(target)[0] or "application/octet-stream")
+                with open(target, "rb") as f:
+                    return self._send(200, f.read(), content_type)
             if parsed.path in ("/", "/index.html"):
-                with open(os.path.join(ROOT, "index.html"), "rb") as f:
-                    return self._send(200, f.read(), "text/html; charset=utf-8")
+                with open(os.path.join(ROOT, "index.html"), "r", encoding="utf-8") as f:
+                    page = f.read()
+                dist_root = os.path.realpath(os.path.join(ROOT, "..", "dist"))
+                loaders = sorted(
+                    name for name in os.listdir(dist_root)
+                    if name.startswith("app.") and name.endswith(".js")
+                ) if os.path.isdir(dist_root) else []
+                if loaders:
+                    loader = loaders[0]
+                    bootstrap = (
+                        '<script>window.__leanBridgeReady = new Promise((resolve, reject) => { '
+                        'window.__resolveLeanBridge = resolve; window.__rejectLeanBridge = reject; });</script>\n'
+                    )
+                    module = f"""<script type="module">
+import {{ mount }} from "/dist/{loader}";
+try {{
+  const app = await mount(document.getElementById("editor"));
+  window.__resolveLeanBridge(app);
+  app.ports.snapshot.subscribe(raw => window.__editorBridgeSnapshot?.(raw));
+  app.ports.action.subscribe(action => window.__editorServerAction?.(action));
+}} catch (error) {{
+  window.__rejectLeanBridge(error);
+  window.__editorBridgeError?.(String(error));
+}}
+</script>"""
+                    page = page.replace("<script>\n(() => {", bootstrap + "<script>\n(() => {")
+                    page = page.replace("</body>", module + "\n</body>")
+                return self._send(200, page, "text/html; charset=utf-8")
             if parsed.path == "/collab":
                 room_name = parse_qs(parsed.query).get("room", ["demo"])[0]
                 try:
                     room = rooms.get(room_name)
                 except ValueError as e:
                     return self._json(400, {"ok": False, "error": str(e)})
-                return self._json(200, room.call({"cmd": "state"}))
+                since_raw = parse_qs(parsed.query).get("since", ["0"])[0]
+                try:
+                    since = max(0, int(since_raw))
+                except ValueError:
+                    return self._json(400, {"ok": False, "error": "since must be a non-negative integer"})
+                return self._json(200, room.call({"cmd": "state", "since": since}))
             return self._send(404, "not found", "text/plain")
 
         def do_POST(self):
             parsed = urlsplit(self.path)
-            if parsed.path not in ("/api", "/collab"):
+            if parsed.path != "/collab":
                 return self._send(404, "not found", "text/plain")
             try:
                 msg = self._read_json()
             except Exception as e:
                 return self._json(400, {"ok": False, "error": str(e)})
-            if parsed.path == "/api":
-                return self._json(200, backend.call(msg))
             room_name = msg.pop("room", "demo")
             try:
                 room = rooms.get(room_name)
@@ -196,15 +231,13 @@ def make_handler(backend, rooms, collab_delay_ms=0):
 
 
 def main():
-    if not os.path.exists(EXE):
-        sys.exit(f"backend not found at {EXE}\nbuild it first with `lake build`")
     if not os.path.exists(COLLAB_EXE):
         sys.exit(f"collaboration backend not found at {COLLAB_EXE}\nbuild it first with `lake build`")
     port = int(sys.argv[1]) if len(sys.argv) > 1 else 8000
     host = os.environ.get("OT_HOST", "127.0.0.1")
     delay_ms = configured_collaboration_delay()
     server = ThreadingHTTPServer((host, port),
-                                 make_handler(Backend(EXE), Rooms(COLLAB_EXE), delay_ms))
+                                 make_handler(Rooms(COLLAB_EXE), delay_ms))
     print(f"editor running at http://{host}:{server.server_address[1]}  (collaboration delay: {delay_ms} ms; Ctrl+C to stop)")
     try:
         server.serve_forever()

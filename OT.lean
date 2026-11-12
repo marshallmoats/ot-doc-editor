@@ -477,6 +477,7 @@ inductive Op (α : Type) where
   | nop : Op α
   | ins : Nat → α → Op α
   | del : Nat → α → Op α      -- remembers the deleted element
+  deriving DecidableEq
 
 def Op.apply : Op α → List α → List α
   | .nop,     l => l
@@ -690,10 +691,12 @@ inductive Core (α K : Type) where
   | setK  : K → K → Core α K       -- change kind: old, new
   | split : Nat → K → Core α K     -- split at text offset; new block gets this kind
   | merge : Nat → K → Core α K     -- join with next block; (length of this block, kind of next)
+  deriving DecidableEq
 
 inductive BOp (α K : Type) where
   | nop : BOp α K
   | blk : Nat → Core α K → BOp α K
+  deriving DecidableEq
 
 /-- How many blocks (from the index) an op reads. -/
 def Core.reach : Core α K → Nat
@@ -1534,11 +1537,6 @@ def demo : Server (BOp Char Kind) (List (Block Char Kind)) :=
 
 -- A presses Enter inside block 0; B (stale, revision 0) appends "X" to block 1
 -- and turns block 0 into a heading. Then A's split is undone.
-#eval
-  let (s1, _) := demo.submit 0 [.blk 0 (.split 1 .para)]
-  let (s2, _) := s1.submit 0 [.blk 1 (.inl (.ins 2 'X')), .blk 0 (.setK .para .h1)]
-  let s3 := s2.undo 0
-  (render s2.doc, render s3.doc)
 
 
 /-! # Documents with referenced tables: a keyed product of two algebras
@@ -1706,13 +1704,5 @@ def typeInCell (key : CellKey) (txt : String) : List WorldOp :=
 
 -- Two users, both at revision 0: one types in cell (7,0,0) and the other types in
 -- cell (7,0,1) and in the main text. Then the cell edit is undone.
-#eval
-  let (s1, _) := worldDemo.submit 0 (typeInCell (7, 0, 0) "hi")
-  let (s2, _) := s1.submit 0 (typeInCell (7, 0, 1) "yo" ++ ([.main (.blk 0 (.inl (.ins 0 (.ch '>'))))] : List WorldOp))
-  let s3 := s2.undo 0
-  let (m2, c2) := s2.doc
-  let (m3, c3) := s3.doc
-  ((showDoc m2, showDoc (c2 (7, 0, 0)), showDoc (c2 (7, 0, 1))),
-   (showDoc m3, showDoc (c3 (7, 0, 0)), showDoc (c3 (7, 0, 1))))
 
 end OT

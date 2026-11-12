@@ -34,8 +34,7 @@ def appendBang (s : Session) : Session :=
 
 /-- A browser-local edit enters the Lean pending queue immediately. -/
 def clientLocalInsert (c : ClientState) : ClientState :=
-  let e : BOps := [.blk 0 (.inl (.ins 0 '!'))]
-  if h : ValidSeq e c.doc then c.applyLocal e h else c
+  (c.applyReplace 0 0 0 0 "!").getD c
 
 /-- Simulate a concurrent peer edit expressed against the confirmed snapshot. -/
 def clientRemoteInsert (c : ClientState) : ClientState :=
@@ -45,7 +44,7 @@ def clientRemoteInsert (c : ClientState) : ClientState :=
 /-- Acknowledge the complete pending prefix without replaying it into the
 optimistic document. The Lean ClientState proof checks the prefix relation. -/
 def clientAcknowledge (c : ClientState) : ClientState :=
-  c.acknowledge c.pending [] (by simp)
+  (c.acknowledgePrefixLength c c.pending.length).getD c
 
 def update : Msg → AppState → AppState
   | .append, (s, c) => (appendBang s, c)

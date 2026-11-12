@@ -4,7 +4,7 @@
   "type": "module",
   "scripts": {
     "wasm:dev": "lasm dev BrowserMain.lean --target browser",
-    "wasm:build": "lasm build BrowserMain.lean --target browser"
+    "wasm:build": "lasm build BrowserBridge.lean --target browser"
   },
   "devDependencies": {
     "@lasm/cli": "0.7.0"
