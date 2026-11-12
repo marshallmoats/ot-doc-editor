@@ -68,7 +68,7 @@ async function main() {
     await input('insertParagraph');
     assert.strictEqual(texts().length, 4);
     assert.strictEqual(texts()[1], 'abc');
-    let [n, o] = caret(); assert.strictEqual(n, ed.children[2]); assert.strictEqual(o, 0);
+    let [n, o] = caret(); assert.strictEqual(n.nodeType === 3 ? n.parentNode : n, ed.children[2]); assert.strictEqual(o, 0);
     await input('deleteContentBackward');
     assert.strictEqual(texts().length, 3);
     assert.strictEqual(texts()[1].slice(0, 3), 'abc');
