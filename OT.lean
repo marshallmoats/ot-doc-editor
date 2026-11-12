@@ -548,9 +548,9 @@ theorem Op.valid_transform (a b : Op α) (s : Side) (d : List α)
       simp only [Op.Valid] at ha hb
       simp only [Op.transform, Op.apply]
       by_cases h : p < q
-      · simp only [h, if_true, Op.Valid]
+      · simp only [h, ite_true, Op.Valid]
         rw [getElem?_insertAt_lt d p q e h hb]; exact ha
-      · simp only [h, if_false, Op.Valid]
+      · simp only [h, ite_false, Op.Valid]
         rw [getElem?_insertAt_ge d p q e (by omega) hb]; exact ha
     | del q e =>
       simp only [Op.Valid] at ha hb
@@ -575,10 +575,10 @@ theorem tp1_insIns (p q : Nat) (c e : α) (s : Side) (d : List α)
   simp only [Op.transform, Op.apply]
   rcases Nat.lt_trichotomy p q with h | h | h
   · have h1 : ¬ q < p := by omega
-    simp [h, h1, Op.apply]
+    simp [h, h1]
     exact (insertAt_comm d p q c e (by omega) hb).symm
   · subst h
-    cases s <;> simp [Side.flip, Op.apply]
+    cases s <;> simp [Side.flip]
     · exact (insertAt_comm d p p c e (Nat.le_refl _) hb).symm
     · exact insertAt_comm d p p e c (Nat.le_refl _) hb
   · have h1 : ¬ p < q := by omega
@@ -612,7 +612,7 @@ theorem tp1_delDel (p q : Nat) (c e : α) (s : Side) (d : List α) :
     simp
     exact (deleteAt_comm d p q' (by omega)).symm
   · subst h
-    simp [Op.apply]
+    simp
   · have h1 : ¬ p < q := by omega
     have h2 : ¬ p = q := by omega
     simp [h, h1, h2, Op.apply]
@@ -975,7 +975,7 @@ theorem Op.splitOp_first (o : Op α) (t : List α) (q : Nat) (hv : o.Valid t)
     simp only [Op.Valid] at hv
     by_cases hp : p ≤ q
     · have hl := length_insertAt t p c hv
-      simp only [Op.splitOp, Op.xpos, Op.apply, Op.Valid, hp, if_true, List.length_take]
+      simp only [Op.splitOp, Op.xpos, Op.apply, Op.Valid, hp, ite_true, List.length_take]
       refine ⟨by omega, take_insertAt_le t p q c hp hq, drop_insertAt_le t p q c hp hq, by omega⟩
     · simp [Op.splitOp, hp] at h
   | del p e =>
@@ -983,7 +983,7 @@ theorem Op.splitOp_first (o : Op α) (t : List α) (q : Nat) (hv : o.Valid t)
     have hlt := Op.valid_del_lt hv
     by_cases hp : p < q
     · have hl := length_deleteAt t p hlt
-      simp only [Op.splitOp, Op.xpos, Op.apply, Op.Valid, hp, if_true]
+      simp only [Op.splitOp, Op.xpos, Op.apply, Op.Valid, hp, ite_true]
       refine ⟨?_, take_deleteAt_lt t p q hp hq, drop_deleteAt_lt t p q hp hq, by omega⟩
       rw [List.getElem?_take_of_lt hp]; exact hv
     · simp [Op.splitOp, hp] at h
@@ -1002,7 +1002,7 @@ theorem Op.splitOp_second (o : Op α) (t : List α) (q : Nat) (hv : o.Valid t)
     by_cases hp : p ≤ q
     · simp [Op.splitOp, hp] at h
     · have hl := length_insertAt t p c hv
-      simp only [Op.splitOp, Op.xpos, Op.apply, Op.Valid, hp, if_false, List.length_drop]
+      simp only [Op.splitOp, Op.xpos, Op.apply, Op.Valid, hp, ite_false, List.length_drop]
       refine ⟨by omega, take_insertAt_gt t p q c (by omega) hq,
         drop_insertAt_gt t p q c (by omega) hv, by omega⟩
   | del p e =>
@@ -1011,7 +1011,7 @@ theorem Op.splitOp_second (o : Op α) (t : List α) (q : Nat) (hv : o.Valid t)
     by_cases hp : p < q
     · simp [Op.splitOp, hp] at h
     · have hl := length_deleteAt t p hlt
-      simp only [Op.splitOp, Op.xpos, Op.apply, Op.Valid, hp, if_false]
+      simp only [Op.splitOp, Op.xpos, Op.apply, Op.Valid, hp, ite_false]
       refine ⟨?_, take_deleteAt_ge t p q (by omega), drop_deleteAt_ge t p q (by omega), by omega⟩
       rw [List.getElem?_drop]
       have : q + (p - q) = p := by omega
@@ -1053,12 +1053,12 @@ theorem Op.length_apply (o : Op α) (t : List α) (hv : o.Valid t) :
     simp only [Op.Valid] at hv
     have hl := length_insertAt t p c hv
     simp only [Op.xpos, Op.apply]
-    rw [if_pos hv]; exact hl
+    rw [ite_eq_left hv]; exact hl
   | del p e =>
     have hlt := Op.valid_del_lt hv
     have hl := length_deleteAt t p hlt
     simp only [Op.xpos, Op.apply]
-    rw [if_pos hlt]; exact hl
+    rw [ite_eq_left hlt]; exact hl
 
 end InlineBlock
 
@@ -1279,7 +1279,7 @@ theorem j00_merge_merge (p : Nat) (k : K) (q : Nat) (k2 : K) (s : Side) (l : Lis
       obtain ⟨h1, h2⟩ := hx
       obtain ⟨h3, h4⟩ := hy
       subst h1 h3 h2 h4
-      simp [Joint, BOp.transform, BOp.apply, BOp.Valid, applyAt, validAt,
+      simp [Joint, BOp.transform, BOp.apply, BOp.Valid, applyAt,
         Core.applyHead, Core.validHead]
 
 
@@ -1331,7 +1331,7 @@ theorem j00_split_merge (p : Nat) (k : K) (q : Nat) (k2 : K) (s : Side) (l : Lis
       obtain ⟨rfl, rfl⟩ := hy
       have hl : p ≤ t.length := hx
       simp [Joint, BOp.transform, BOp.apply, BOp.Valid, applyAt, validAt,
-        Core.applyHead, Core.validHead, hl, List.take_append_of_le_length hl,
+        Core.applyHead, Core.validHead, List.take_append_of_le_length hl,
         List.drop_append_of_le_length hl]
       omega
 
@@ -1360,7 +1360,7 @@ theorem j00_split_split_eq (p : Nat) (k : K) (k2 : K) (s : Side) (l : List (Bloc
     simp only [validAt, Core.validHead] at hx hy
     cases s <;>
     simp [Joint, Side.flip, BOp.transform, BOp.apply, BOp.Valid, applyAt, validAt,
-      Core.applyHead, Core.validHead, hx, hy, List.take_take]
+      Core.applyHead, Core.validHead, hx, List.take_take]
 
 theorem j00_split_split (p : Nat) (k : K) (q : Nat) (k2 : K) (s : Side) (l : List (Block α K))
     (hx : validAt 0 (.split p k) l) (hy : validAt 0 (.split q k2) l) :
@@ -1437,14 +1437,14 @@ theorem joint_merge1 (p : Nat) (k : K) (d : Core α K) (s : Side) (b : Block α 
     | inl o =>
       simp only [validAt, Core.validHead] at hy
       simp [Joint, BOp.transform, BOp.apply, BOp.Valid, applyAt, validAt,
-        Core.applyHead, Core.validHead, Op.apply_append_right, Op.valid_shiftUp _ _ _ hy, hy]
+        Core.applyHead, Core.validHead, Op.apply_append_right, Op.valid_shiftUp _ _ _ hy]
     | setK a a' =>
       simp_all [Joint, BOp.transform, BOp.apply, BOp.Valid, applyAt, validAt,
         Core.applyHead, Core.validHead]
     | split a k2 =>
       simp only [validAt, Core.validHead] at hy
       simp [Joint, BOp.transform, BOp.apply, BOp.Valid, applyAt, validAt,
-        Core.applyHead, Core.validHead, take_append_len, drop_append_len, hy]
+        Core.applyHead, Core.validHead, take_append_len, hy]
     | merge a k2 =>
       cases rest with
       | nil => simp [validAt, Core.validHead] at hy
@@ -1527,7 +1527,7 @@ inductive Kind where
   deriving Repr, DecidableEq
 
 def render (d : List (Block Char Kind)) : List (String × String) :=
-  d.map fun b => (reprStr b.kind, String.mk b.text)
+  d.map fun b => (reprStr b.kind, String.ofList b.text)
 
 def demo : Server (BOp Char Kind) (List (Block Char Kind)) :=
   { init := [⟨.para, "ab".toList⟩, ⟨.para, "cd".toList⟩], log := [] }
@@ -1642,7 +1642,7 @@ theorem WOp.valid_xf [DecidableEq κ] [OTAlg O1 D1] [OTAlg O2 D2]
       simp only [WOp.Valid] at ha hb
       by_cases h : k = k'
       · subst h
-        simp only [WOp.xf, WOp.Valid, WOp.app, if_true, upd_same]
+        simp only [WOp.xf, WOp.Valid, WOp.app, ite_true, upd_same]
         exact OTAlg.valid_xf a b s (w.2 k) ha hb
       · simp [WOp.xf, WOp.Valid, WOp.app, h, upd_other _ _ _ _ h, ha]
 
