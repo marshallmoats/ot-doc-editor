@@ -8,7 +8,7 @@ const clientId = crypto.randomUUID ? crypto.randomUUID() : "client-" + Math.rand
 const collabStatus = document.getElementById("collab-status");
 document.getElementById("room-name").textContent = roomName;
 let client = null, state = null, lastPos = { block: 0, offset: 0 };
-let composing = null, activeRequest = null, actionPending = false, requestCounts = new Map(), idleWaiters = [];
+let composing = null, activeRequest = null, actionPending = false, requestCounts = new Map(), idleWaiters = [], drainWaiters = [];
 const cp = s => Array.from(s).length;
 const cpToIdx = (s, n) => { let i = 0; for (const ch of s) { if (!n--) break; i += ch.length; } return i; };
 const idxToCp = (s, i) => cp(s.slice(0, i));
@@ -117,7 +117,10 @@ function integrate(changes, snapshot) {
   settleIdle();
 }
 function settleIdle() {
-  if (!activeRequest && !actionPending && (!client || client.pending.length===0)) idleWaiters.splice(0).forEach(r=>r());
+  if (!activeRequest && (!client || client.pending.length===0)) {
+    drainWaiters.splice(0).forEach(r=>r());
+    if (!actionPending) idleWaiters.splice(0).forEach(r=>r());
+  }
 }
 async function sendPending() {
   if (!client || activeRequest || !client.pending.length) { settleIdle(); return; }
@@ -186,7 +189,10 @@ function doUndoRedo(cmd) {
     } catch(e){showError(String(e));}
     finally{actionPending=false;settleIdle();}
   };
-  if(client.pending.length||activeRequest)whenIdle().then(run);else run();
+  if(client.pending.length||activeRequest) {
+    actionPending=true;
+    new Promise(resolve=>drainWaiters.push(resolve)).then(run);
+  } else { actionPending=true; run(); }
 }
 function whenIdle(){return (activeRequest||actionPending||client?.pending.length)?new Promise(r=>idleWaiters.push(r)):Promise.resolve();}
 
