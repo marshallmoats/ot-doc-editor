@@ -1,5 +1,5 @@
 name = "ot-editor"
-defaultTargets = ["ot-editor"]
+defaultTargets = ["OT", "ot-editor"]
 
 [[lean_lib]]
 name = "OT"
