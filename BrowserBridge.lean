@@ -24,6 +24,7 @@ structure LiveInput where
 
 inductive BridgeMsg where
   | serverAction (action : String)
+  | ignoreInput
   | liveInput (input : LiveInput)
   | intent (data : Data)
   | remote (data : Data)
@@ -223,7 +224,7 @@ def bridgeLiveInputDecoder : Decoder (Handled BridgeMsg) :=
         some ⟨.liveInput input, true, false⟩
     | "historyUndo" => some ⟨.serverAction "undo", true, false⟩
     | "historyRedo" => some ⟨.serverAction "redo", true, false⟩
-    | _ => none
+    | _ => some ⟨.ignoreInput, true, false⟩
 
 def bridgeApplyLiveInput (c : ClientState) (input : LiveInput) : Option ClientState := do
   let i := input.fromBlock
@@ -277,6 +278,7 @@ def bridgeUpdate : BridgeMsg → ClientState → ClientState × Cmd BridgeMsg
       | some next =>
         (next, Cmd.port "snapshot" (bridgeSnapshot next))
   | .serverAction action, c => (c, Cmd.port "action" (.string action))
+  | .ignoreInput, c => (c, .none)
   | .snapshotRequest, c =>
     (c, Cmd.port "snapshot" (bridgeSnapshot c))
 

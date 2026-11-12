@@ -19,10 +19,13 @@ The Python server serves the hashed files generated in `dist/` and injects
 the Lasm `mount` bootstrap into the editor page. Open
 `http://127.0.0.1:8000/?room=demo` in two tabs to collaborate.
 
-The browser shell forwards edit intents to Lean and forwards Lean-generated
-operation batches to the HTTP server. It also passes server operation-log
-entries and acknowledgements back to Lean. It does not implement operation
-construction, transformation, rebasing, or acknowledgement.
+The production editor is mounted as the Lasm root. A browser `beforeinput` event
+reaches a Lean handler synchronously: Lean constructs and validates the edit,
+updates `ClientState`, and Lasm patches the editor DOM in the same browser task.
+The JavaScript adapter only samples DOM selection and clipboard/IME data before
+the event reaches Lasm. It does not maintain an optimistic document or construct
+operations. Network submission remains asynchronous; server operation-log
+entries and acknowledgements return to Lean through ports.
 
 ## Standalone Lean/WASM exercise
 
@@ -64,4 +67,5 @@ lost on restart. Authentication, authorization, durable persistence, TLS,
 presence, and remote cursors are not implemented. Room names are identifiers,
 not access controls. Do not expose the demo server to the public internet.
 CI tests the native Lean server, browser UI fallback, operation-batch
-submission, browser/WASM compilation, and generated asset serving.
+submission, browser/WASM compilation, generated asset serving, and the direct
+DOM-event-to-Lean transition including same-task rendering.

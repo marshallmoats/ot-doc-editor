@@ -134,5 +134,31 @@ assert.equal(secondAcknowledged.rev, 3);
 assert.equal(secondAcknowledged.pendingCount, 0);
 assert.ok(secondAcknowledged.doc[0].text.startsWith("?!A"));
 
+// A real DOM beforeinput event is handled synchronously by Lean. The event is
+// cancelled and the Lasm view shows the new character before this dispatch
+// returns; no JS-side optimistic document or network round trip is involved.
+const editorContent = document.getElementById("editor-content");
+assert.ok(editorContent, "Lean view did not render the production editor");
+const beforeInput = new dom.window.Event("beforeinput", {
+  bubbles: true, cancelable: true
+});
+for (const [key, value] of Object.entries({
+  inputType: "insertText", isComposing: false, otData: "X",
+  otFromBlock: 0, otFromOffset: 0, otToBlock: 0, otToOffset: 0
+})) {
+  Object.defineProperty(beforeInput, key, { value });
+}
+const snapshotCount = snapshots.length;
+assert.equal(editorContent.dispatchEvent(beforeInput), false,
+  "Lean did not prevent the browser's native contenteditable mutation");
+assert.ok(editorContent.textContent.startsWith("X?!A"),
+  "Lean's synchronous view did not display the character before dispatch returned");
+const snapshotDeadline = Date.now() + 5000;
+while (snapshots.length === snapshotCount && Date.now() < snapshotDeadline) {
+  await new Promise(resolve => setTimeout(resolve, 5));
+}
+assert.ok(snapshots.length > snapshotCount, "no Lean snapshot after synchronous DOM input");
+assert.equal(snapshots.at(-1).pendingCount, 1);
+
 dom.window.close();
 console.log("Lean/WASM browser client intent, remote rebase, and prefix acknowledgement passed");
