@@ -155,6 +155,8 @@ async function main() {
     assert(typeAtStart(w2, 'B').startsWith('B'));
     assert(typeAtStart(w2, '2').startsWith('2B'),
       'the peer also keeps multiple local operations pending');
+    assert(w1.__editor.pendingCount>=2 && w2.__editor.pendingCount>=2,
+      'each browser retains multiple unacknowledged operations in its local queue');
     await Promise.all([waitIdle(w1, 'client one'), waitIdle(w2, 'client two')]);
     await sleep(450); // allow the peer polling cycle to integrate the final revision
     const authoritative = await (await fetch(base + '/collab?room=ot-race')).json();
