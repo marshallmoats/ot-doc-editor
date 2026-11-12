@@ -538,7 +538,15 @@ async function flushPending() {
 
 if (window.__leanBridgeReady) {
   window.__leanBridgeReady.then(async bridge => {
-    editorContent = document.getElementById('editor-content');
+    // Lasm mounts its own editor-content root inside #editor. The static
+    // empty element in the HTML is only for the DOM-only fallback, so remove
+    // it here and bind selection/caret handling to the mounted Lean view.
+    const editorRoots = [...editor.children].filter(el => el.id === 'editor-content');
+    editorContent = editorRoots[editorRoots.length - 1] || null;
+    if (!editorContent) throw new Error('Lean editor root was not mounted');
+    for (const root of editorRoots) {
+      if (root !== editorContent) root.remove();
+    }
     await sendLeanAndWait(bridge, 'snapshot-request', 'ready',
       snapshot => snapshot.rev === state.rev);
     const r = await api({ cmd: 'state' });
