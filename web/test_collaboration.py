@@ -110,7 +110,27 @@ def main():
         assert since_four["changes"] == [batch]
         assert since_four["doc"] == submitted["doc"]
 
-        print("collaboration integration: stale-base edits, shared undo/redo, and Lean operation batches passed")
+        later_batch = [{
+            "tag": "blk", "block": 1,
+            "core": {"op": "ins", "offset": 1, "char": "Y"}
+        }]
+        later = call({
+            "cmd": "submitOps", "baseRevision": 5,
+            "clientId": "bob", "requestId": "bob-batch-2",
+            "ops": later_batch
+        })
+        assert later["rev"] == 6
+        duplicate_after_later = call({
+            "cmd": "submitOps", "baseRevision": 4,
+            "clientId": "alice", "requestId": "alice-batch-1",
+            "ops": batch
+        })
+        assert duplicate_after_later["rev"] == 5
+        assert duplicate_after_later["changes"] == []
+        since_five = call({"cmd": "state", "since": 5})
+        assert since_five["changes"] == [later_batch]
+
+        print("collaboration integration: stale-base edits, shared undo/redo, idempotent batches, and Lean operation batches passed")
     finally:
         proc.terminate()
         proc.wait(timeout=5)
