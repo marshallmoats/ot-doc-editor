@@ -1,111 +1,120 @@
 # Verified OT editor
 
 A web editor whose document model and operational-transformation algebra are
-implemented and verified in Lean 4. A small Python bridge serves the native
-single-user UI; an experimental browser client runs the Lean engine in
-WebAssembly.
+implemented and verified in Lean 4. The production browser editor runs the
+optimistic collaboration client in Lean/WebAssembly; JavaScript is limited to
+DOM, selection/IME, rendering, and HTTP transport.
 
-## Run the native editor
+## Run the live editor
+
+Build the native collaboration server and browser client bundle, then start the
+Python HTTP adapter:
 
 ```sh
 lake build
+npm install
+npm run wasm:build
 python3 web/server.py
 ```
 
-Open http://127.0.0.1:8000.
+Open http://127.0.0.1:8000/?room=demo in two browser tabs. Edits in either tab
+appear in the other. Use **Copy invite link** to share the room URL. The server
+serves the generated hashed JavaScript/WASM assets from `dist/` and mounts the
+Lean client bridge into the editor page.
 
-To make overlapping collaboration requests easier to reproduce while testing,
-set `OT_COLLAB_DELAY_MS` to add a delay (0–60000 ms) to each collaboration
-mutation before it enters the room's serialization lock. For example:
+For a trusted local-network demo, bind to all interfaces:
+
+```sh
+OT_HOST=0.0.0.0 python3 web/server.py
+```
+
+This demo server is unauthenticated and unencrypted. Do not expose it to the
+public internet.
+
+## Client/server consistency model
+
+- Browser input is converted to a small edit intent using DOM selection and
+  input events. The intent is sent through a Lasm port to `BrowserBridge.lean`.
+- Lean constructs and validates the operation against its optimistic document,
+  applies it, and maintains the pending operation queue.
+- JavaScript forwards Lean-generated operation batches to the server. It does
+  not construct operations or implement OT transformations.
+- The server returns the transformed accepted batch plus intervening log
+  entries. The Lean client rebases pending operations over those entries and
+  acknowledges only when the accepted operation sequence matches the pending
+  prefix.
+- Later local edits remain pending while earlier batches are in flight. The
+  next batch is submitted from the Lean-rebased queue.
+- Polling requests only changes since the client's confirmed revision. Remote
+  changes are passed to Lean for validation and rebasing before the UI renders
+  the resulting document.
+
+The server serializes room mutations and performs authoritative stale-base
+transformation. The browser Lean client maintains optimistic state so typing
+does not wait for each HTTP acknowledgement.
+
+To make overlapping requests easier to reproduce, set
+`OT_COLLAB_DELAY_MS` to add a delay (0–60000 ms) before each mutation enters
+the room's serialization lock:
 
 ```sh
 OT_COLLAB_DELAY_MS=250 python3 web/server.py
 ```
 
-The delay is disabled by default and does not affect reads or the legacy
-single-user API. Because the delay occurs before the room lock, requests from
-different clients can be in flight together and their acceptance order is
-determined by which request acquires the lock first.
+The delay is disabled by default and does not affect reads.
 
-## Test
+## Standalone WebAssembly exercise
 
-```sh
-python3 web/test_backend.py 60
-npm install jsdom && node web/test_frontend.js
-```
-
-CI also runs `lake build` with the pinned Lean toolchain and builds the
-browser/WebAssembly target.
-
-## Browser/WebAssembly demo
-
-The browser entry point is `BrowserMain.lean`. It runs the shared Lean editor
-core in WebAssembly and includes a deterministic two-client collaboration
-replay using the revisioned server core.
+`BrowserMain.lean` remains a deterministic Lean/WASM exercise for the shared
+editor core and collaboration server. Run it with:
 
 ```sh
 npm install
 npm run wasm:dev
 ```
 
-Open the local URL printed by Lasm. Use the interactive editor controls to
-append, undo, and redo; the second panel shows two stale-base client edits
-serialized by the Lean collaboration server. Build the production bundle with
-`npm run wasm:build`.
+This standalone page is a local replay, not a network session. The production
+browser bridge is `BrowserBridge.lean`, built by `npm run wasm:build`.
 
-See [docs/wasm-client.md](docs/wasm-client.md) for prerequisites, architecture,
-and limitations. The collaboration panel is a local deterministic replay,
-not a live multi-user network session.
-
-## Layout
-
-- `OT.lean` — verified OT algebra, TP1 proofs, block operations, server convergence, selective undo.
-- `Editor/Core.lean` — document/session types, proof-carrying undo/redo, and edit builders.
-- `Editor/Collaboration.lean` — optimistic client state, pending local edits, remote rebasing, and acknowledgement.
-- `Editor/Collaboration/Server.lean` — revisioned server acceptance, stale-base transformation, and client/request receipts.
-- `Main.lean` — native JSON-lines server protocol.
-- `BrowserMain.lean` — browser/WebAssembly demo.
-- `web/` — Python bridge, native UI, and tests.
-
-## Trust model
-
-Every committed edit is checked against `ValidSeq`. Session and collaborative
-client state carry proofs that the document, pending queue, and undo/redo
-chains remain valid. The UI/edit builders are not verified; malformed edits
-are rejected rather than corrupting the document.
-
-## Current limitations
-
-## Live browser collaboration (demo server)
-
-The native browser editor at `web/index.html` can now join an in-memory shared
-room. The Python HTTP bridge provides room routing and polling; each room owns
-a long-lived `ot-collab` Lean process. Every edit is rebuilt against the
-client's declared base revision and accepted by `CollaborationServer`, which
-performs the authoritative stale-base transformation and validity check.
+## Test
 
 ```sh
 lake build
-python3 web/server.py
+python3 web/test_backend.py 60
+npm install jsdom && node web/test_frontend.js
+python3 web/test_server_delay.py
+python3 web/test_collaboration.py
 ```
 
-Open `http://127.0.0.1:8000/?room=demo` in two separate browser tabs. Edits
-made in either tab are serialized by the same room server and appear in the
-other tab. Use **Copy invite link** to share the room URL. To let another
-computer on your trusted LAN connect, start the server with
-`OT_HOST=0.0.0.0 python3 web/server.py` and share the host machine's LAN
-address. Do not expose this unauthenticated demo server to the public internet.
+CI additionally builds the browser/WASM target and verifies that the Python
+server injects the Lasm mount bootstrap and serves the generated JavaScript and
+WASM assets.
 
-The `npm run wasm:dev` page remains the self-contained WebAssembly/Lean demo;
-its collaboration panel is still a deterministic local replay. The live-room
-transport is currently provided by the native browser page and Lean server
-process, not by WebAssembly.
+## Layout
 
-## Demo limitations
+- `OT.lean` — verified OT algebra, TP1 proofs, block operations, server
+  convergence, and selective undo.
+- `Editor/Core.lean` — document/session types, proof-carrying undo/redo, and
+  edit builders.
+- `Editor/Collaboration.lean` — optimistic client state, pending local edits,
+  remote rebasing, and prefix acknowledgement.
+- `Editor/Collaboration/Server.lean` — revisioned server acceptance,
+  stale-base transformation, and client/request receipts.
+- `BrowserBridge.lean` — Lean/WASM state machine and structured Lasm ports for
+  the production browser editor.
+- `BrowserMain.lean` — standalone deterministic browser exercise.
+- `CollaborationMain.lean` — JSON-lines protocol for the native room server.
+- `web/` — DOM/IME UI, HTTP adapter, and integration tests.
 
-Rooms and request de-duplication are held in server memory and are lost when
-the process restarts. This demo has no authentication, authorization, TLS,
-durable storage, shared undo/redo, presence, or remote cursors. Room names are
-not access controls. CI runs a real Lean-process integration test in which two
-clients submit edits from revision zero and converge at revision two. Treat
-this as a LAN/demo milestone, not a production multi-tenant service.
+## Trust model and limitations
+
+Every committed edit is checked against `ValidSeq`. Client state carries
+proofs that the document and pending queue remain valid. Browser selection and
+input-intent interpretation are UI integration code, not verified Lean
+logic; malformed intents and operation batches are rejected.
+
+Rooms, the revision log, and request de-duplication are in memory and are lost
+when the process restarts. The demo has no authentication, authorization, TLS,
+durable storage, presence, or remote cursors. Room names are identifiers, not
+access controls. Treat this as a LAN/demo milestone, not a production
+multi-tenant service.
