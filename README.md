@@ -80,6 +80,7 @@ browser bridge is `BrowserBridge.lean`, built by `npm run wasm:build`.
 
 ```sh
 lake build
+python3 web/test_backend.py 60
 npm install
 npm run wasm:build
 npm install --no-save jsdom
