@@ -14,6 +14,7 @@ open Lasm.UI
 
 inductive BridgeMsg where
   | intent (raw : String)
+  | remote (raw : String)
   | acknowledge (raw : String)
 
 def bridgeKindName : Kind → String
@@ -47,6 +48,80 @@ def bridgeParsePos (j : Json) (key : String) :
   let block ← p.getObjValAs? Nat "block"
   let offset ← p.getObjValAs? Nat "offset"
   pure (block, offset)
+
+def bridgeKind? : String → Option Kind
+  | "para" => some .para
+  | "h1" => some .h1
+  | "h2" => some .h2
+  | "item" => some .item
+  | "quote" => some .quote
+  | _ => none
+
+def bridgeChar? (j : Json) : Option Char := do
+  let s ← (j.getObjValAs? String "char").toOption
+  match s.toList with
+  | [ch] => some ch
+  | _ => none
+
+def bridgeCore? (j : Json) : Option (Core Char Kind) := do
+  let op ← (j.getObjValAs? String "op").toOption
+  match op with
+  | "nop" => some (.inl .nop)
+  | "ins" =>
+    let p ← (j.getObjValAs? Nat "offset").toOption
+    let ch ← bridgeChar? j
+    some (.inl (.ins p ch))
+  | "del" =>
+    let p ← (j.getObjValAs? Nat "offset").toOption
+    let ch ← bridgeChar? j
+    some (.inl (.del p ch))
+  | "setKind" =>
+    let oldText ← (j.getObjValAs? String "old").toOption
+    let newText ← (j.getObjValAs? String "kind").toOption
+    let old ← bridgeKind? oldText
+    let next ← bridgeKind? newText
+    some (.setK old next)
+  | "split" =>
+    let p ← (j.getObjValAs? Nat "offset").toOption
+    let kindText ← (j.getObjValAs? String "kind").toOption
+    let kind ← bridgeKind? kindText
+    some (.split p kind)
+  | "merge" =>
+    let p ← (j.getObjValAs? Nat "offset").toOption
+    let kindText ← (j.getObjValAs? String "kind").toOption
+    let kind ← bridgeKind? kindText
+    some (.merge p kind)
+  | _ => none
+
+def bridgeBOp? (j : Json) : Option (BOp Char Kind) := do
+  let tag ← (j.getObjValAs? String "tag").toOption
+  match tag with
+  | "nop" => some .nop
+  | "blk" =>
+    let block ← (j.getObjValAs? Nat "block").toOption
+    let coreJson ← (j.getObjVal? "core").toOption
+    let core ← bridgeCore? coreJson
+    some (.blk block core)
+  | _ => none
+
+def bridgeOps? (j : Json) : Option BOps :=
+  match j with
+  | .arr items => items.toList.mapM bridgeBOp?
+  | _ => none
+
+def bridgeChanges? (j : Json) : Option (List BOps) :=
+  match j with
+  | .arr items => items.toList.mapM bridgeOps?
+  | _ => none
+
+def bridgeRemote (c : ClientState) (raw : String) : Option ClientState := do
+  let json ← (Json.parse raw).toOption
+  let changes ← bridgeChanges? json
+  changes.foldlM (fun state ops =>
+    if h : ValidSeq ops state.confirmedDoc then
+      some (state.receiveRemote ops h)
+    else
+      none) c
 
 def bridgeIntent (c : ClientState) (raw : String) : Option ClientState :=
   match Json.parse raw with
@@ -83,6 +158,10 @@ def bridgeUpdate : BridgeMsg → ClientState → ClientState × Cmd BridgeMsg
         Cmd.port "snapshot" (.string (bridgeSnapshot next)),
         Cmd.port "submit" (.string raw)
       ])
+  | .remote raw, c =>
+    match bridgeRemote c raw with
+    | none => (c, Cmd.port "error" (.string "Malformed or invalid remote change batch"))
+    | some next => (next, Cmd.port "snapshot" (.string (bridgeSnapshot next)))
   | .acknowledge raw, c =>
     match bridgeAckInfo raw with
     | none => (c, Cmd.port "error" (.string "Malformed acknowledgement"))
@@ -96,6 +175,9 @@ def bridgeSubscriptions (_ : ClientState) : Subs BridgeMsg :=
   Subs.batch [
     Subs.port "intent" fun
       | .string raw => some (.intent raw)
+      | _ => none,
+    Subs.port "remote" fun
+      | .string raw => some (.remote raw)
       | _ => none,
     Subs.port "ack" fun
       | .string raw => some (.acknowledge raw)
