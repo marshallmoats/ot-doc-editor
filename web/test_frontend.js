@@ -16,7 +16,7 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
 const waitIdle = (win, label) => new Promise((resolve, reject) => {
   const timer=setTimeout(() => reject(new Error(label + " timed out: " +
     JSON.stringify({state:win.__editor.state,collab:win.document.getElementById('collab-status').textContent,
-      status:win.document.getElementById('status').textContent})),15000);
+      status:win.document.getElementById('status').textContent}))),15000);
   win.__editor.whenIdle().then(value=>{clearTimeout(timer);resolve(value)},error=>{clearTimeout(timer);reject(error)});
 });
 
