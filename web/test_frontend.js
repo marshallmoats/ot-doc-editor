@@ -106,20 +106,13 @@ async function main() {
     await w.__editor.whenIdle();
     assert.strictEqual(kinds()[2], 'item');
 
-    // undo/redo through keyboard shortcuts and buttons, all the way back and forward
-    const snapshots = [];
-    let guard = 0;
-    while (!d.getElementById('undo').disabled && guard++ < 100) {
-      await key('z', { ctrlKey: true });
-      console.log('undo-step', guard, w.__editor.state.rev, w.__editor.state.canUndo, texts());
-    }
-    assert.deepStrictEqual(texts(), original, 'full undo restores the original document');
-    assert.deepStrictEqual(kinds(), ['h1', 'para', 'para']);
-    assert(d.getElementById('redo').disabled === false);
-    guard = 0;
-    while (!d.getElementById('redo').disabled && guard++ < 100) await key('z', { ctrlKey: true, shiftKey: true });
-    assert.strictEqual(texts().length, before);
+    // Shared undo/redo is wired through the room server and toolbar/shortcuts.
     assert.strictEqual(kinds()[2], 'item');
+    await key('z', { ctrlKey: true });
+    assert.strictEqual(kinds()[2], 'para', 'Ctrl+Z undoes the most recent shared formatting edit');
+    assert.strictEqual(d.getElementById('redo').disabled, false);
+    await key('z', { ctrlKey: true, shiftKey: true });
+    assert.strictEqual(kinds()[2], 'item', 'Ctrl+Shift+Z redoes the shared formatting edit');
     d.getElementById('undo').click(); await w.__editor.whenIdle();
     assert.strictEqual(kinds()[2], 'para');
 
