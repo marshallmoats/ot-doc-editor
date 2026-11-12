@@ -179,7 +179,7 @@ def make_handler(backend, rooms, collab_delay_ms=0):
                         '<script>window.__leanBridgeReady = new Promise((resolve, reject) => { '
                         'window.__resolveLeanBridge = resolve; window.__rejectLeanBridge = reject; });</script>\n'
                     )
-                    module = f\'''<script type="module">
+                    module = f"""<script type="module">
 import {{ mount }} from "/dist/{loader}";
 try {{
   const app = await mount(document.getElementById("lean-client"));
@@ -191,7 +191,7 @@ try {{
   window.__rejectLeanBridge(error);
   window.__editorBridgeError?.(String(error));
 }}
-</script>\'''
+</script>"""
                     page = page.replace("<script>\n(() => {", bootstrap + "<script>\n(() => {")
                     page = page.replace("</body>", module + "\n</body>")
                 return self._send(200, page, "text/html; charset=utf-8")
