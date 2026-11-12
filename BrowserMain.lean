@@ -6,7 +6,7 @@ The first milestone deliberately reuses Main's pure editor logic; the next extra
 will move Session and the edit builders into an IO-free Editor.Core module.
 -/
 
-import Main
+import Editor.Core
 import Lasm.UI
 
 open OT
