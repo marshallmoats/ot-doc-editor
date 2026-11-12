@@ -213,14 +213,7 @@ def collabHandle (s : CollaborationServer) (line : String) :
       | .ok base, .ok clientId, .ok requestId, .ok block, .ok kindText =>
         if hbase : base ≤ s.revision then
           let historicalDoc := s.srv.docAt base
-          let kind? : Option Kind :=
-            match kindText with
-            | "para" => some .para
-            | "h1" => some .h1
-            | "h2" => some .h2
-            | "item" => some .item
-            | "quote" => some .quote
-            | _ => none
+          let kind? := collabParseKind kindText
           match kind? with
           | none => (collabError "unknown block kind", s)
           | some kind =>
