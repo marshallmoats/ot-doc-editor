@@ -249,7 +249,7 @@ editor.addEventListener("keydown",e=>{const mod=e.ctrlKey||e.metaKey,k=(e.key||"
   else if(mod&&k==="y"){e.preventDefault();doUndoRedo("redo");}});
 for(const b of [els.undo,els.redo])b.addEventListener("mousedown",e=>e.preventDefault());
 els.undo.addEventListener("click",()=>doUndoRedo("undo"));els.redo.addEventListener("click",()=>doUndoRedo("redo"));
-els.kind.addEventListener("change",()=>setKind(currentRange().to.block,els.kind.value));
+els.kind.addEventListener("change",()=>{const p=currentRange().to;lastPos=p;setKind(p.block,els.kind.value);});
 
 fetch("/collab?room="+encodeURIComponent(roomName),{cache:"no-store"}).then(r=>r.json()).then(s=>{
   if(!s.ok)throw new Error(s.error||"cannot load room");
