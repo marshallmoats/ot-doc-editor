@@ -204,7 +204,19 @@
     client.pending.splice(0, count);
     client.revision = change.revision;
   }
-  function encode(op) { return op; }
+  function encode(op) {
+    if (op.tag !== "blk" || op.core.tag !== "inl") return op;
+    const x=op.core.op;
+    if (x.tag === "nop") return blk(op.index,{tag:"nop"});
+    return blk(op.index,{tag:x.tag,pos:x.pos,char:x.char});
+  }
+  function decode(op) {
+    if (op.tag !== "blk") return op;
+    if (op.core.tag === "nop") return blk(op.index,{tag:"inl",op:nop()});
+    if (op.core.tag === "ins" || op.core.tag === "del")
+      return blk(op.index,{tag:"inl",op:op.core});
+    return op;
+  }
   window.OTClient = { applyAll, buildReplace, buildKind, createClient, local,
-    receiveRemote, acknowledge, xformSeq, encode, cloneDoc };
+    receiveRemote, acknowledge, xformSeq, encode, decode, cloneDoc };
 })();
