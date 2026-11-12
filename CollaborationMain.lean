@@ -47,6 +47,13 @@ def collabOpsJson (ops : BOps) : Json :=
 def collabChangesJson (changes : List BOps) : Json :=
   Json.arr (changes.map collabOpsJson).toArray
 
+/-- Log entries before the accepted request's own revision. This also
+makes duplicate request receipts safe: the client's own accepted batch is
+never replayed as a remote operation. Later log entries are fetched by poll. -/
+def collabChangesBefore (s : CollaborationServer) (base acceptedRevision : Nat) : Json :=
+  let count := acceptedRevision - base - 1
+  collabChangesJson ((s.srv.log.drop base).take count)
+
 def collabStateJson (s : CollaborationServer) (since : Nat := 0) : Json :=
   Json.mkObj [
     ("ok", Json.bool true),
@@ -184,7 +191,7 @@ def collabHandle (s : CollaborationServer) (line : String) :
                 ("acceptedRevision", toJson receipt.revision),
                 ("acceptedCount", toJson receipt.acceptedEdit.length),
                 ("acceptedEdit", collabOpsJson receipt.acceptedEdit),
-                ("changes", collabChangesJson (s.srv.log.drop base)),
+                ("changes", collabChangesBefore s base receipt.revision),
                 ("doc", collabDocJson receipt.document),
                 ("rev", toJson receipt.revision),
                 ("canUndo", Json.bool (!next.undoHistory.isEmpty)),
@@ -235,7 +242,7 @@ def collabHandle (s : CollaborationServer) (line : String) :
                   ("acceptedRevision", toJson receipt.revision),
                   ("acceptedCount", toJson receipt.acceptedEdit.length),
                   ("acceptedEdit", collabOpsJson receipt.acceptedEdit),
-                  ("changes", collabChangesJson (s.srv.log.drop base)),
+                  ("changes", collabChangesBefore s base receipt.revision),
                   ("doc", collabDocJson receipt.document),
                   ("rev", toJson receipt.revision),
                   ("canUndo", Json.bool (!next.undoHistory.isEmpty)),
@@ -277,7 +284,7 @@ def collabHandle (s : CollaborationServer) (line : String) :
                 ("acceptedRevision", toJson receipt.revision),
                   ("acceptedCount", toJson receipt.acceptedEdit.length),
                   ("acceptedEdit", collabOpsJson receipt.acceptedEdit),
-                  ("changes", collabChangesJson (s.srv.log.drop base)),
+                  ("changes", collabChangesBefore s base receipt.revision),
                 ("doc", collabDocJson receipt.document),
                 ("rev", toJson receipt.revision),
                 ("canUndo", Json.bool (!next.undoHistory.isEmpty)),
