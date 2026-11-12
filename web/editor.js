@@ -124,15 +124,16 @@ async function sendPending() {
   const requestId=crypto.randomUUID ? crypto.randomUUID() : clientId+"-"+Date.now()+"-"+Math.random();
   const count=client.pending.length, ops=client.pending.slice();
   activeRequest={requestId,count}; requestCounts.set(requestId,count);
+  let failed=false;
   try {
     const response=await fetch("/collab",{method:"POST",headers:{"Content-Type":"application/json"},
       body:JSON.stringify({cmd:"submitOps",room:roomName,clientId,requestId,baseRevision:client.revision,ops})}).then(r=>r.json());
     if(!response.ok) throw new Error(response.error||"collaboration request failed");
     integrate(response.changes||[],response);
-  } catch(e) { showError(String(e)); }
+  } catch(e) { failed=true; showError(String(e)); }
   finally {
     if(activeRequest && activeRequest.requestId===requestId) activeRequest=null;
-    if(client && client.pending.length) sendPending(); else settleIdle();
+    if(client && client.pending.length && !failed) sendPending(); else settleIdle();
   }
 }
 async function poll() {
