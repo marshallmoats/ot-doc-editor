@@ -943,12 +943,11 @@ theorem deleteAt_append_right : ∀ (t t2 : List α) (p : Nat),
 
 theorem take_append_len (t t2 : List α) (p : Nat) :
     (t ++ t2).take (t.length + p) = t ++ t2.take p := by
-  rw [List.take_append_eq_append_take, List.take_of_length_le (Nat.le_add_right _ _)]
-  simp
+  exact List.take_length_add_append p
 
 theorem drop_append_len (t t2 : List α) (p : Nat) :
     (t ++ t2).drop (t.length + p) = t2.drop p := by
-  simp [List.drop_append_eq_append_drop]
+  exact List.drop_length_add_append p
 
 end ListLemmas
 
