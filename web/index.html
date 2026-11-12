@@ -233,11 +233,50 @@ function caretAfterInsert(from, text) {
   return { block: from.block + lines.length - 1, offset: cpLen(lines[lines.length - 1]) };
 }
 
+function applyOptimisticReplace(from, to, text) {
+  // Apply the user's edit to the visible document before starting network I/O.
+  // The server remains authoritative and its accepted snapshot reconciles this
+  // optimistic view when the request is acknowledged.
+  const before = state.doc;
+  const prefix = [...(before[from.block]?.text || '')].slice(0, from.offset);
+  const suffix = [...(before[to.block]?.text || '')].slice(to.offset);
+  const lines = text.replace(/\r\n?/g, '\n').split('\n').map(line => [...line]);
+  if (lines.length === 1) lines[0] = prefix.concat(lines[0], suffix);
+  else {
+    lines[0] = prefix.concat(lines[0]);
+    lines[lines.length - 1] = lines[lines.length - 1].concat(suffix);
+  }
+  const first = before[from.block] || { kind: 'para', text: '' };
+  const replacement = lines.map((chars, i) => ({
+    kind: i === 0 ? first.kind : 'para',
+    text: chars.join(''),
+  }));
+  state.doc = before.slice(0, from.block).concat(replacement, before.slice(to.block + 1));
+  if (!state.doc.length) state.doc = [{ kind: 'para', text: '' }];
+  const caret = caretAfterInsert(from, text);
+  render();
+  editor.focus();
+  setCaret(caret);
+  return caret;
+}
+
 async function replace(from, to, text) {
-  const resp = await api({ cmd: 'replace', from, to, text });
-  // beforeinput is cancelled, so the browser never advances its native caret.
-  // Restore it after the accepted edit, not at the insertion's original start.
-  apply(resp, text ? caretAfterInsert(from, text) : from);
+  // Render locally during OT_COLLAB_DELAY_MS; reconcile with the server's
+  // transformed authoritative snapshot once this request is accepted.
+  const optimisticCaret = applyOptimisticReplace(from, to, text);
+  try {
+    const resp = await api({ cmd: 'replace', from, to, text });
+    if (resp.ok) apply(resp, text ? caretAfterInsert(from, text) : from);
+    else {
+      showError(resp.error || 'edit rejected');
+      const authoritative = await api({ cmd: 'state' }).catch(() => null);
+      if (authoritative && authoritative.ok) apply(authoritative, from);
+    }
+  } catch (e) {
+    showError(String(e));
+    const authoritative = await api({ cmd: 'state' }).catch(() => null);
+    if (authoritative && authoritative.ok) apply(authoritative, optimisticCaret);
+  }
 }
 
 function rangeText(from, to) {

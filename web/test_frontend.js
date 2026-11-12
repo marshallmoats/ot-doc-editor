@@ -15,7 +15,9 @@ const base = `http://127.0.0.1:${PORT}`;
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 
 async function main() {
-  const server = spawn('python3', [path.join(__dirname, 'server.py'), String(PORT)], { stdio: 'ignore' });
+  const server = spawn('python3', [path.join(__dirname, 'server.py'), String(PORT)], {
+    stdio: 'ignore', env: { ...process.env, OT_COLLAB_DELAY_MS: '300' },
+  });
   try {
     for (let i = 0; i < 50; i++) { try { await fetch(base + '/'); break; } catch { await sleep(100); } }
     const dom = await JSDOM.fromFile(path.join(__dirname, 'index.html'), {
@@ -54,11 +56,49 @@ async function main() {
     assert.strictEqual(kinds()[0], 'h1');
     const original = texts();
 
+    // With an intentional server delay, the first keystroke must appear in the
+    // local document before the HTTP acknowledgement can arrive.
+    place(1, 0);
+    const optimisticEvent = new w.InputEvent('beforeinput', {
+      inputType: 'insertText', data: 'O', bubbles: true, cancelable: true,
+    });
+    ed.dispatchEvent(optimisticEvent);
+    assert(optimisticEvent.defaultPrevented);
+    assert.strictEqual(texts()[1].slice(0, 1), 'O',
+      'local edit should render immediately, before delayed server acknowledgement');
+    await w.__editor.whenIdle();
+    assert.strictEqual(texts()[1].slice(0, 1), 'O',
+      'acknowledgement should preserve the optimistic edit');
+
+    // Race another client's edit against a local optimistic edit. The server
+    // OT log must preserve both, regardless of which request wins serialization.
+    place(1, 1);
+    const localRace = new w.InputEvent('beforeinput', {
+      inputType: 'insertText', data: 'L', bubbles: true, cancelable: true,
+    });
+    ed.dispatchEvent(localRace);
+    assert.strictEqual(texts()[1].slice(0, 2), 'OL',
+      'second local edit should also be visible optimistically');
+    const remoteRace = fetch(base + '/collab', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        cmd: 'replace', room: 'demo', clientId: 'remote-test-client',
+        requestId: 'remote-race-1', baseRevision: w.__editor.state.rev,
+        from: { block: 2, offset: 0 }, to: { block: 2, offset: 0 }, text: 'R',
+      }),
+    }).then(r => r.json());
+    await w.__editor.whenIdle();
+    const remoteReceipt = await remoteRace;
+    assert(remoteReceipt.ok, remoteReceipt.error || 'remote concurrent edit rejected');
+    const converged = await (await fetch(base + '/collab?room=demo')).json();
+    assert(converged.doc[1].text.startsWith('OL'), 'local text survives concurrent remote edit');
+    assert(converged.doc[2].text.startsWith('R'), 'remote text survives concurrent local edit');
+
     // typing: three fast keystrokes queued back to back must land in order
     place(1, 0);
     input('insertText', 'a'); input('insertText', 'b'); await input('insertText', 'c');
     assert.strictEqual(texts()[1].slice(0, 3), 'abc');
-    assert.strictEqual(w.__editor.state.rev, 3);
+    assert.strictEqual(w.__editor.state.rev, 4);
     let [typingNode, typingOffset] = caret();
     assert.strictEqual(typingNode.data.slice(0, typingOffset), 'abc',
       'caret must advance to the end of each accepted insertion');
