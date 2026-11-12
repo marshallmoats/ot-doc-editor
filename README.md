@@ -78,11 +78,22 @@ are rejected rather than corrupting the document.
 
 ## Live browser collaboration (demo server)
 
-The native browser editor at `web/index.html` can now join an in-memory shared
-room. The Python HTTP bridge provides room routing and polling; each room owns
-a long-lived `ot-collab` Lean process. Every edit is rebuilt against the
-client's declared base revision and accepted by `CollaborationServer`, which
-performs the authoritative stale-base transformation and validity check.
+The browser editor at `web/index.html` joins an in-memory shared room. The
+browser maintains a confirmed server snapshot, an ordered pending-operation
+queue, and an optimistic document. Local operations are applied and rendered
+immediately; the browser submits pending batches against its confirmed
+revision while continuing to accept new local edits.
+
+The Python HTTP bridge provides room routing and revisioned operation polling;
+each room owns a long-lived `ot-collab` Lean process. The server validates each
+submitted operation batch at its declared historical revision and transforms
+it over the intervening server log. Clients consume the ordered accepted
+operations, transform remote batches over their pending local operations,
+rebase that queue, and retire matching acknowledged prefixes. The browser
+operation transformer mirrors the Lean `BOp.transform` and `xformSeq`
+definitions in `web/ot_client.js`; the Lean collaboration model in
+`Editor/Collaboration.lean` carries the corresponding validity and
+convergence proofs.
 
 ```sh
 lake build
