@@ -17,13 +17,44 @@ def collabDocJson (d : BDoc) : Json :=
       ("text", Json.str (String.ofList b.text))
     ]).toArray
 
-def collabStateJson (s : CollaborationServer) : Json :=
+def collabCoreJson : Core Char Kind → Json
+  | .inl .nop => Json.mkObj [("op", Json.str "nop")]
+  | .inl (.ins p ch) => Json.mkObj [
+      ("op", Json.str "ins"), ("offset", toJson p),
+      ("char", Json.str (String.singleton ch))]
+  | .inl (.del p ch) => Json.mkObj [
+      ("op", Json.str "del"), ("offset", toJson p),
+      ("char", Json.str (String.singleton ch))]
+  | .setK old next => Json.mkObj [
+      ("op", Json.str "setKind"), ("old", Json.str (collabKindToString old)),
+      ("kind", Json.str (collabKindToString next))]
+  | .split p kind => Json.mkObj [
+      ("op", Json.str "split"), ("offset", toJson p),
+      ("kind", Json.str (collabKindToString kind))]
+  | .merge p kind => Json.mkObj [
+      ("op", Json.str "merge"), ("offset", toJson p),
+      ("kind", Json.str (collabKindToString kind))]
+
+def collabBOpJson : BOp Char Kind → Json
+  | .nop => Json.mkObj [("tag", Json.str "nop")]
+  | .blk block core => Json.mkObj [
+      ("tag", Json.str "blk"), ("block", toJson block),
+      ("core", collabCoreJson core)]
+
+def collabOpsJson (ops : BOps) : Json :=
+  Json.arr (ops.map collabBOpJson).toArray
+
+def collabChangesJson (changes : List BOps) : Json :=
+  Json.arr (changes.map collabOpsJson).toArray
+
+def collabStateJson (s : CollaborationServer) (since : Nat := 0) : Json :=
   Json.mkObj [
     ("ok", Json.bool true),
     ("doc", collabDocJson s.srv.doc),
     ("rev", toJson s.revision),
     ("canUndo", Json.bool (!s.undoHistory.isEmpty)),
     ("canRedo", Json.bool (!s.redoHistory.isEmpty)),
+    ("changes", collabChangesJson (s.srv.log.drop since)),
     ("cursor", Json.null)
   ]
 
@@ -46,15 +77,19 @@ def collabHandle (s : CollaborationServer) (line : String) :
   | .ok j =>
     match j.getObjValAs? String "cmd" with
     | .error _ => (collabError "missing cmd", s)
-    | .ok "state" => (collabStateJson s, s)
+    | .ok "state" =>
+      let since := (j.getObjValAs? Nat "since").toOption.getD 0
+      (collabStateJson s since, s)
     | .ok "undo" =>
+      let since := (j.getObjValAs? Nat "baseRevision").toOption.getD s.revision
       match s.undo with
       | none => (collabError "nothing to undo", s)
-      | some next => (collabStateJson next, next)
+      | some next => (collabStateJson next since, next)
     | .ok "redo" =>
+      let since := (j.getObjValAs? Nat "baseRevision").toOption.getD s.revision
       match s.redo with
       | none => (collabError "nothing to redo", s)
-      | some next => (collabStateJson next, next)
+      | some next => (collabStateJson next since, next)
     | .ok "setKind" =>
       match j.getObjValAs? Nat "baseRevision",
           j.getObjValAs? String "clientId",
@@ -92,6 +127,7 @@ def collabHandle (s : CollaborationServer) (line : String) :
                   ("requestId", Json.str receipt.requestId),
                   ("acceptedRevision", toJson receipt.revision),
                   ("acceptedCount", toJson receipt.acceptedEdit.length),
+                  ("changes", collabChangesJson (s.srv.log.drop base)),
                   ("doc", collabDocJson receipt.document),
                   ("rev", toJson receipt.revision),
                   ("canUndo", Json.bool (!next.undoHistory.isEmpty)),
@@ -132,6 +168,7 @@ def collabHandle (s : CollaborationServer) (line : String) :
                 ("requestId", Json.str receipt.requestId),
                 ("acceptedRevision", toJson receipt.revision),
                   ("acceptedCount", toJson receipt.acceptedEdit.length),
+                  ("changes", collabChangesJson (s.srv.log.drop base)),
                 ("doc", collabDocJson receipt.document),
                 ("rev", toJson receipt.revision),
                 ("canUndo", Json.bool (!next.undoHistory.isEmpty)),
