@@ -97,7 +97,8 @@ let state = { doc: [], rev: 0, canUndo: false, canRedo: false, pendingOps: [], p
 let lastPos = { block: 0, offset: 0 };
 let networkBusy = false;
 let failedFlush = false;
-let pendingRequest = null;   // last known caret (focus end), in blocks / code points
+let pendingRequest = null;
+let roomReady = false;   // last known caret (focus end), in blocks / code points
 let statusTimer = null;
 
 /* ---- code point helpers: Lean counts Unicode scalar values, JS strings count UTF-16 units ---- */
@@ -404,14 +405,14 @@ window.__editorBridgeSnapshot = raw => {
   state = { ...next, canUndo: state.canUndo, canRedo: state.canRedo };
   render();
   if (focused) setCaret(caret);
-  if (state.pendingOps && state.pendingOps.length && !networkBusy && !failedFlush) {
+  if (roomReady && state.pendingOps && state.pendingOps.length && !networkBusy && !failedFlush) {
     void flushPending();
   }
 };
 window.__editorBridgeError = message => showError(String(message));
 
 async function flushPending() {
-  if (networkBusy || failedFlush || !window.__leanBridgeReady) return;
+  if (networkBusy || failedFlush || !roomReady || !window.__leanBridgeReady) return;
   if (!state.pendingOps || !state.pendingOps.length) return;
   networkBusy = true;
   if (!pendingRequest) {
@@ -475,11 +476,14 @@ if (window.__leanBridgeReady) {
   window.__leanBridgeReady.then(async bridge => {
     await bridge.ports['snapshot-request'].send('ready');
     const r = await api({ cmd: 'state' });
-    if (r.ok && r.changes && r.changes.length) await bridge.ports.remote.send(r.changes);
+    if (!r.ok) throw new Error(r.error || 'cannot load room state');
+    if (r.changes && r.changes.length) await bridge.ports.remote.send(r.changes);
     state.canUndo = !!r.canUndo;
     state.canRedo = !!r.canRedo;
+    roomReady = true;
     render();
     collabStatus.textContent = 'Connected · revision ' + state.rev;
+    if (state.pendingOps && state.pendingOps.length) void flushPending();
   }).catch(() => showError('cannot start Lean client'));
 } else {
   // DOM-only test harnesses do not load the generated browser WASM module.
@@ -491,7 +495,8 @@ if (window.__leanBridgeReady) {
 // the request queue; remote snapshots are integrated only when no local request
 // or IME composition is in flight.
 setInterval(async () => {
-  if (running || queue.length || composing || networkBusy || state.pendingCount) return;
+  if (running || queue.length || composing || networkBusy || state.pendingCount ||
+      (window.__leanBridgeReady && !roomReady)) return;
   try {
     const r = await fetch('/collab?room=' + encodeURIComponent(roomName) + '&since=' + encodeURIComponent(state.rev), { cache: 'no-store' });
     const remote = await r.json();
