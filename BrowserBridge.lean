@@ -296,7 +296,7 @@ def bridgeBlockView (i : Nat) (block : Block Char Kind) : Html BridgeMsg :=
   </div>
 
 def bridgeView (c : ClientState) : Html BridgeMsg :=
-  html! <div id="editor-content" {custom "beforeinput" bridgeLiveInputDecoder}>
+  html! <div id="editor-content" contenteditable="true" spellcheck="false" role="textbox" aria-multiline="true" aria-label="Document" {custom "beforeinput" bridgeLiveInputDecoder}>
     {(List.range c.doc.length).map fun i => bridgeBlockView i c.doc[i]!}
   </div>
 
