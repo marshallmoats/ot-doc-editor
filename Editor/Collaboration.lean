@@ -138,6 +138,26 @@ def acknowledge (c : ClientState) (accepted rest : BOps)
   uchain := c.uchain
   rchain := c.rchain
 
+/-- Build and apply a user replacement intent at the optimistic document head.
+The browser passes only a range and text; operation construction, validation,
+and queue insertion all remain in Lean. -/
+def applyReplace (c : ClientState) (i p j q : Nat) (txt : String) :
+    Option ClientState := do
+  let edit ← replaceOps c.doc i p j q txt
+  if h : ValidSeq edit c.doc then
+    some (c.applyLocal edit h)
+  else
+    none
+
+/-- Build and apply a block-kind change at the optimistic document head. -/
+def applySetKind (c : ClientState) (i : Nat) (kind : Kind) :
+    Option ClientState := do
+  let edit ← setKindOps c.doc i kind
+  if h : ValidSeq edit c.doc then
+    some (c.applyLocal edit h)
+  else
+    none
+
 end ClientState
 
 /-! ## Executable smoke scenario
