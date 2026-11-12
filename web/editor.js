@@ -8,7 +8,7 @@ const clientId = crypto.randomUUID ? crypto.randomUUID() : "client-" + Math.rand
 const collabStatus = document.getElementById("collab-status");
 document.getElementById("room-name").textContent = roomName;
 let client = null, state = null, lastPos = { block: 0, offset: 0 };
-let composing = null, activeRequest = null, requestCounts = new Map(), idleWaiters = [];
+let composing = null, activeRequest = null, actionPending = false, requestCounts = new Map(), idleWaiters = [];
 const cp = s => Array.from(s).length;
 const cpToIdx = (s, n) => { let i = 0; for (const ch of s) { if (!n--) break; i += ch.length; } return i; };
 const idxToCp = (s, i) => cp(s.slice(0, i));
@@ -117,7 +117,7 @@ function integrate(changes, snapshot) {
   settleIdle();
 }
 function settleIdle() {
-  if (!activeRequest && (!client || client.pending.length===0)) idleWaiters.splice(0).forEach(r=>r());
+  if (!activeRequest && !actionPending && (!client || client.pending.length===0)) idleWaiters.splice(0).forEach(r=>r());
 }
 async function sendPending() {
   if (!client || activeRequest || !client.pending.length) { settleIdle(); return; }
@@ -176,12 +176,19 @@ function wordBoundary(pos,dir) {
   return {block:pos.block,offset:o};
 }
 function doUndoRedo(cmd) {
-  const run=async()=>{try{const r=await fetch("/collab",{method:"POST",headers:{"Content-Type":"application/json"},
-    body:JSON.stringify({cmd,room:roomName})}).then(x=>x.json());if(!r.ok)showError(r.error||cmd+" failed");await poll();}
-    catch(e){showError(String(e));}};
-  if(client.pending.length||activeRequest){whenIdle().then(run);}else run();
+  const run=async()=>{
+    actionPending=true;
+    try {
+      const r=await fetch("/collab",{method:"POST",headers:{"Content-Type":"application/json"},
+        body:JSON.stringify({cmd,room:roomName})}).then(x=>x.json());
+      if(!r.ok)showError(r.error||cmd+" failed");
+      await poll();
+    } catch(e){showError(String(e));}
+    finally{actionPending=false;settleIdle();}
+  };
+  if(client.pending.length||activeRequest)whenIdle().then(run);else run();
 }
-function whenIdle(){return (activeRequest||client?.pending.length)?new Promise(r=>idleWaiters.push(r)):Promise.resolve();}
+function whenIdle(){return (activeRequest||actionPending||client?.pending.length)?new Promise(r=>idleWaiters.push(r)):Promise.resolve();}
 
 let compositionRange=null;
 editor.addEventListener("compositionstart",()=>{compositionRange=currentRange();});
