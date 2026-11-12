@@ -157,6 +157,17 @@ def applySetKind (c : ClientState) (i : Nat) (kind : Kind) :
     some (c.applyLocal edit h)
   else
     none
+/-- Retire an acknowledged prefix by its operation count. The count comes from
+ the server's accepted operation batch; take/drop and the proof below ensure
+ that only that prefix advances the confirmed snapshot. -/
+def acknowledgePrefixLength (c : ClientState) (n : Nat) :
+    Option ClientState := do
+  if h : n ≤ c.pending.length then
+    let accepted := c.pending.take n
+    let rest := c.pending.drop n
+    some (c.acknowledge accepted rest (by simp))
+  else
+    none
 
 end ClientState
 
@@ -198,4 +209,13 @@ example : (ClientState.init initialDoc).applySetKind 0 .para |>.isSome := by
   decide
 
 example : (ClientState.init initialDoc).applyReplace 99 0 99 0 "x" = none := by
+  decide
+
+example :
+    (((ClientState.init initialDoc).applyReplace 0 0 0 0 "x").getD
+      (ClientState.init initialDoc)).acknowledgePrefixLength 1 |>.isSome := by
+  decide
+
+example :
+    (ClientState.init initialDoc).acknowledgePrefixLength 1 = none := by
   decide
