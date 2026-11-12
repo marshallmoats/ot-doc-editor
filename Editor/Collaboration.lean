@@ -179,6 +179,24 @@ def acknowledgePrefixLength (c : ClientState) (n : Nat) :
     Option ClientState :=
   c.acknowledgePrefixLengthAt n (c.revision + 1)
 
+/-- Acknowledge only when the server's transformed operation batch is
+exactly the pending prefix. This avoids trusting a count when concurrent
+operations have changed the shape of the local queue. -/
+def acknowledgeAcceptedAt (c : ClientState) (accepted : BOps)
+    (revision : Nat) : Option ClientState := do
+  let n := accepted.length
+  let prefix := c.pending.take n
+  if h : prefix = accepted then
+    let rest := c.pending.drop n
+    have hprefix : c.pending = prefix ++ rest := by
+      dsimp [prefix, rest]
+      exact (List.take_append_drop n c.pending).symm
+    let next := c.acknowledge prefix rest hprefix
+    some { next with revision := revision }
+  else
+    none
+
+
 end ClientState
 
 /-! ## Executable smoke scenario
