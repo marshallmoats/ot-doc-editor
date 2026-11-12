@@ -95,7 +95,7 @@ function mapPos(pos, ops) {
 }
 function integrate(changes, snapshot) {
   if (!client) return;
-  for (const change of changes || []) {
+  for (let change of changes || []) {
     if (change.revision <= client.revision) continue;
     change = { ...change, edit: (change.edit || []).map(OTClient.decode) };
     const caretFocused=document.activeElement===editor;
