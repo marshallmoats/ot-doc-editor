@@ -7,6 +7,6 @@
     "wasm:build": "lasm build BrowserMain.lean --target browser"
   },
   "devDependencies": {
-    "@lasm/compiler": "0.7.0"
+    "@lasm/cli": "0.7.0"
   }
 }
