@@ -14,6 +14,19 @@ python3 web/server.py
 
 Open http://127.0.0.1:8000.
 
+To make overlapping collaboration requests easier to reproduce while testing,
+set `OT_COLLAB_DELAY_MS` to add a delay (0–60000 ms) to each collaboration
+mutation before it enters the room's serialization lock. For example:
+
+```sh
+OT_COLLAB_DELAY_MS=250 python3 web/server.py
+```
+
+The delay is disabled by default and does not affect reads or the legacy
+single-user API. Because the delay occurs before the room lock, requests from
+different clients can be in flight together and their acceptance order is
+determined by which request acquires the lock first.
+
 ## Test
 
 ```sh
