@@ -40,6 +40,9 @@
   .k-item { position: relative; padding-left: 1.4em; margin-bottom: .2em; }
   .k-item::before { content: "\2022"; position: absolute; left: .35em; color: var(--muted); }
   .k-quote { border-left: 3px solid var(--border); padding-left: 1em; color: var(--muted); }
+  .collabbar { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin: 12px 0; font-size: 13px; color: var(--muted); }
+  .collabbar strong { color: var(--text); }
+  #collab-status { margin-left: auto; }
   .hint { margin-top: 14px; font-size: 13px; color: var(--muted); }
   kbd { font: 12px ui-monospace, monospace; border: 1px solid var(--border); border-bottom-width: 2px;
         border-radius: 4px; padding: 0 5px; background: var(--surface); }
@@ -51,6 +54,11 @@
     <h1 class="title">VERIFIED OT EDITOR</h1>
     <span id="rev">rev 0</span>
   </header>
+  <div class="collabbar">
+    <span>Shared room: <strong id="room-name">demo</strong></span>
+    <button id="share-room" type="button">Copy invite link</button>
+    <span id="collab-status" aria-live="polite">Connecting…</span>
+  </div>
   <div class="toolbar">
     <button id="undo" type="button" disabled>Undo</button>
     <button id="redo" type="button" disabled>Redo</button>
@@ -64,8 +72,8 @@
     <span id="status" role="alert"></span>
   </div>
   <div id="editor" contenteditable="true" spellcheck="false" role="textbox" aria-multiline="true" aria-label="Document"></div>
-  <p class="hint">Every edit is validated by the Lean backend before it is committed.
-    <kbd>Ctrl</kbd>/<kbd>⌘</kbd>+<kbd>Z</kbd> undo, <kbd>Shift</kbd>+<kbd>Z</kbd> or <kbd>Y</kbd> redo.</p>
+  <p class="hint">Edits are validated and transformed by the Lean room server. Changes from other participants appear automatically.
+    Shared undo/redo is not enabled yet; use a new edit to correct a change.</p>
 </div>
 
 <script>
@@ -78,6 +86,11 @@ const els = {
   kind: document.getElementById('kind'), rev: document.getElementById('rev'),
   status: document.getElementById('status'),
 };
+const roomName = new URLSearchParams(window.location.search).get('room') || 'demo';
+const clientId = (window.crypto && crypto.randomUUID)
+  ? crypto.randomUUID() : 'client-' + Math.random().toString(36).slice(2);
+const collabStatus = document.getElementById('collab-status');
+document.getElementById('room-name').textContent = roomName;
 
 let state = { doc: [], rev: 0, canUndo: false, canRedo: false };
 let lastPos = { block: 0, offset: 0 };   // last known caret (focus end), in blocks / code points
@@ -186,8 +199,20 @@ document.addEventListener('selectionchange', () => {
 
 /* ---- talking to the backend ---- */
 async function api(msg) {
-  const r = await fetch('/api', {
-    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(msg),
+  if (msg.cmd === 'state') {
+    const r = await fetch('/collab?room=' + encodeURIComponent(roomName), { cache: 'no-store' });
+    return r.json();
+  }
+  const payload = {
+    ...msg,
+    room: roomName,
+    clientId,
+    requestId: (window.crypto && crypto.randomUUID)
+      ? crypto.randomUUID() : clientId + '-' + Date.now() + '-' + Math.random(),
+    baseRevision: state.rev,
+  };
+  const r = await fetch('/collab', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload),
   });
   return r.json();
 }
@@ -196,6 +221,7 @@ function apply(resp, keep) {
   if (!resp.ok) { showError(resp.error || 'request failed'); render(); setCaret(keep); return; }
   state = resp;
   render();
+  collabStatus.textContent = 'Connected · revision ' + state.rev;
   editor.focus();
   setCaret(resp.cursor || keep);
 }
@@ -332,6 +358,42 @@ els.kind.addEventListener('change', () => enqueue({ type: 'kind', kind: els.kind
 /* ---- start ---- */
 api({ cmd: 'state' }).then(r => apply(r, { block: 0, offset: 0 }))
   .catch(() => showError('cannot reach the backend'));
+
+// Poll the authoritative room snapshot. Local input remains serialized through
+// the request queue; remote snapshots are integrated only when no local request
+// or IME composition is in flight.
+setInterval(async () => {
+  if (running || queue.length || composing) return;
+  try {
+    const r = await fetch('/collab?room=' + encodeURIComponent(roomName), { cache: 'no-store' });
+    const remote = await r.json();
+    if (!remote.ok) {
+      collabStatus.textContent = 'Disconnected';
+      return;
+    }
+    if (remote.rev > state.rev) {
+      const focused = document.activeElement === editor;
+      const caret = focused ? currentRange().to : lastPos;
+      state = remote;
+      render();
+      if (focused) setCaret(caret);
+    }
+    collabStatus.textContent = 'Connected · revision ' + state.rev;
+  } catch (_) {
+    collabStatus.textContent = 'Reconnecting…';
+  }
+}, 500);
+
+document.getElementById('share-room').addEventListener('click', async () => {
+  const url = new URL(window.location.href);
+  url.searchParams.set('room', roomName);
+  try {
+    await navigator.clipboard.writeText(url.toString());
+    collabStatus.textContent = 'Invite link copied';
+  } catch (_) {
+    collabStatus.textContent = url.toString();
+  }
+});
 
 // Test hook (also handy in the console).
 window.__editor = {
