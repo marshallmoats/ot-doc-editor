@@ -182,9 +182,10 @@ function setCaret(pos) {
   const n = state.doc.length;
   if (n === 0) return;
   const b = Math.min(pos.block, n - 1);
-  const o = Math.min(pos.offset, blockLen(b));
   const el = editorContent.children[b];
   const t = el.firstChild;
+  const domLength = t && t.nodeType === 3 ? cpLen(t.data) : 0;
+  const o = Math.min(pos.offset, domLength);
   const range = document.createRange();
   if (t && t.nodeType === 3) range.setStart(t, cpToIdx(t.data, o));
   else range.setStart(el, 0);
@@ -356,10 +357,32 @@ editor.addEventListener('compositionend', e => {
 document.addEventListener('beforeinput', e => {
   if (!editor.contains(e.target)) return;
   const range = currentRange();
-  e.otFromBlock = range.from.block; e.otFromOffset = range.from.offset;
-  e.otToBlock = range.to.block; e.otToOffset = range.to.offset;
+  const from = range.from, to = range.to;
+  e.otFromBlock = from.block; e.otFromOffset = from.offset;
+  e.otToBlock = to.block; e.otToOffset = to.offset;
   e.otData = e.data || (e.dataTransfer ? e.dataTransfer.getData('text/plain') : '');
+  let caret = from;
+  if (['insertText', 'insertParagraph', 'insertLineBreak', 'insertFromPaste',
+       'insertFromDrop', 'insertReplacementText'].includes(e.inputType)) {
+    const text = e.inputType === 'insertParagraph' || e.inputType === 'insertLineBreak'
+      ? '\\n' : e.otData.replace(/\\r\\n?/g, '\\n');
+    const lines = text.split('\\n');
+    caret = { block: from.block + lines.length - 1,
+      offset: lines.length === 1 ? from.offset + cpLen(lines[0]) : cpLen(lines[lines.length - 1]) };
+  } else if (e.inputType === 'deleteContentBackward' && cmp(from, to) === 0) {
+    if (from.offset > 0) caret = { block: from.block, offset: from.offset - 1 };
+    else if (from.block > 0) caret = { block: from.block - 1, offset: blockLen(from.block - 1) };
+  }
+  e.otCaretBlock = caret.block; e.otCaretOffset = caret.offset;
 }, true);
+document.addEventListener('beforeinput', e => {
+  // Lasm handles the event at the editor mount root and patches its view
+  // before bubbling reaches document. Restore the browser selection afterward.
+  if (e.defaultPrevented && editor.contains(e.target) &&
+      Number.isInteger(e.otCaretBlock) && Number.isInteger(e.otCaretOffset)) {
+    setCaret({ block: e.otCaretBlock, offset: e.otCaretOffset });
+  }
+}, false);
 
 editor.addEventListener('cut', e => {
   const { from, to } = currentRange();
