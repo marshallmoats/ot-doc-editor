@@ -95,6 +95,33 @@ const collabStatus = document.getElementById('collab-status');
 document.getElementById('room-name').textContent = roomName;
 
 let state = { doc: [], rev: 0, canUndo: false, canRedo: false, pendingOps: [], pendingCount: 0 };
+let bridgePortQueue = Promise.resolve();
+let bridgeSnapshotWaiters = [];
+let bridgeSnapshotSeq = 0;
+
+// A port send acknowledges delivery to Lean, not necessarily delivery of the
+// resulting snapshot back to this JS transport. Serialize commands and wait
+// for that snapshot before reading the mirrored revision or sending the next
+// state-dependent command.
+function sendLeanAndWait(bridge, portName, payload) {
+  const task = bridgePortQueue.then(() => new Promise((resolve, reject) => {
+    const before = bridgeSnapshotSeq;
+    const waiter = { resolve, reject };
+    bridgeSnapshotWaiters.push(waiter);
+    Promise.resolve(bridge.ports[portName].send(payload)).then(() => {
+      if (bridgeSnapshotSeq > before) {
+        bridgeSnapshotWaiters = bridgeSnapshotWaiters.filter(w => w !== waiter);
+        resolve();
+      }
+    }).catch(error => {
+      bridgeSnapshotWaiters = bridgeSnapshotWaiters.filter(w => w !== waiter);
+      reject(error);
+    });
+  }));
+  bridgePortQueue = task.catch(() => {});
+  return task;
+}
+
 let lastPos = { block: 0, offset: 0 };
 let networkBusy = false;
 let failedFlush = false;
@@ -230,7 +257,7 @@ async function apply(resp, keep) {
   if (!resp.ok) { showError(resp.error || 'request failed'); render(); setCaret(keep); return; }
   if (window.__leanBridgeReady) {
     const bridge = await window.__leanBridgeReady;
-    if (resp.changes && resp.changes.length) await bridge.ports.remote.send(resp.changes);
+    if (resp.changes && resp.changes.length) await sendLeanAndWait(bridge, 'remote', resp.changes);
     state.canUndo = !!resp.canUndo;
     state.canRedo = !!resp.canRedo;
     render();
@@ -254,7 +281,7 @@ async function replace(from, to, text) {
   if (window.__leanBridgeReady) {
     failedFlush = false;
     const bridge = await window.__leanBridgeReady;
-    await bridge.ports.intent.send({ cmd: 'replace', from, to, text });
+    await sendLeanAndWait(bridge, 'intent', { cmd: 'replace', from, to, text });
     // beforeinput is cancelled, so the browser never advances its native caret.
     setCaret(text ? caretAfterInsert(from, text) : from);
     return;
@@ -320,7 +347,7 @@ async function perform(it) {
       if (window.__leanBridgeReady) {
         failedFlush = false;
         const bridge = await window.__leanBridgeReady;
-        await bridge.ports.intent.send({ cmd: 'setKind', block: from.block, kind: it.kind });
+        await sendLeanAndWait(bridge, 'intent', { cmd: 'setKind', block: from.block, kind: it.kind });
         setCaret(from);
         return;
       }
@@ -419,6 +446,10 @@ window.__editorBridgeSnapshot = raw => {
   state = { ...next, canUndo: state.canUndo, canRedo: state.canRedo };
   render();
   if (focused) setCaret(caret);
+  bridgeSnapshotSeq++;
+  const waiters = bridgeSnapshotWaiters;
+  bridgeSnapshotWaiters = [];
+  waiters.forEach(waiter => waiter.resolve(next));
   if (roomReady && state.pendingOps && state.pendingOps.length && !networkBusy && !failedFlush) {
     void flushPending();
   }
@@ -449,7 +480,7 @@ async function flushPending() {
       const latest = await api({ cmd: 'state' });
       if (latest.ok && latest.rev > state.rev && latest.changes && latest.changes.length) {
         const bridge = await window.__leanBridgeReady;
-        await bridge.ports.remote.send(latest.changes);
+        await sendLeanAndWait(bridge, 'remote', latest.changes);
         state.canUndo = !!latest.canUndo;
         state.canRedo = !!latest.canRedo;
         render();
@@ -463,7 +494,7 @@ async function flushPending() {
     } else {
       const bridge = await window.__leanBridgeReady;
       if (resp.changes && resp.changes.length) await bridge.ports.remote.send(resp.changes);
-      await bridge.ports.ack.send({
+      await sendLeanAndWait(bridge, 'ack', {
         acceptedEdit: resp.acceptedEdit,
         acceptedRevision: resp.acceptedRevision
       });
@@ -492,10 +523,10 @@ async function flushPending() {
 if (window.__leanBridgeReady) {
   window.__leanBridgeReady.then(async bridge => {
     editorContent = document.getElementById('editor-content');
-    await bridge.ports['snapshot-request'].send('ready');
+    await sendLeanAndWait(bridge, 'snapshot-request', 'ready');
     const r = await api({ cmd: 'state' });
     if (!r.ok) throw new Error(r.error || 'cannot load room state');
-    if (r.changes && r.changes.length) await bridge.ports.remote.send(r.changes);
+    if (r.changes && r.changes.length) await sendLeanAndWait(bridge, 'remote', r.changes);
     state.canUndo = !!r.canUndo;
     state.canRedo = !!r.canRedo;
     roomReady = true;
@@ -527,7 +558,7 @@ setInterval(async () => {
       const caret = focused ? currentRange().to : lastPos;
       if (window.__leanBridgeReady) {
         const bridge = await window.__leanBridgeReady;
-        await bridge.ports.remote.send(remote.changes || []);
+        await sendLeanAndWait(bridge, 'remote', remote.changes || []);
         state.canUndo = !!remote.canUndo;
         state.canRedo = !!remote.canRedo;
       } else {
