@@ -185,13 +185,13 @@ operations have changed the shape of the local queue. -/
 def acknowledgeAcceptedAt (c : ClientState) (accepted : BOps)
     (revision : Nat) : Option ClientState := do
   let n := accepted.length
-  let prefix := c.pending.take n
-  if h : prefix = accepted then
+  let acceptedPrefix := c.pending.take n
+  if h : acceptedPrefix = accepted then
     let rest := c.pending.drop n
-    have hprefix : c.pending = prefix ++ rest := by
-      dsimp [prefix, rest]
+    have hprefix : c.pending = acceptedPrefix ++ rest := by
+      dsimp [acceptedPrefix, rest]
       exact (List.take_append_drop n c.pending).symm
-    let next := c.acknowledge prefix rest hprefix
+    let next := c.acknowledge acceptedPrefix rest hprefix
     some { next with revision := revision }
   else
     none
