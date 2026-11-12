@@ -153,7 +153,9 @@ def collaborationSmoke : ClientState := by
   have ha : ValidSeq a c0.doc := by decide
   let c1 := c0.applyLocal a ha
   let b : BOps := [.blk 2 (.inl (.ins 0 '?'))]
-  have hb : ValidSeq b c1.doc := by decide
+  have hb : ValidSeq b c1.doc := by
+    change ValidSeq b (applyAll a initialDoc)
+    decide
   let c2 := c1.applyLocal b hb
   let remote : BOps := [.blk 1 (.inl (.ins 0 '#'))]
   have hr : ValidSeq remote initialDoc := by decide
@@ -168,7 +170,7 @@ def collaborationAckSmoke : ClientState := by
   let accepted := c.pending.take 1
   let rest := c.pending.drop 1
   have hp : c.pending = accepted ++ rest := by
-    simp [accepted, rest]
+    simpa [accepted, rest] using (List.take_append_drop 1 c.pending).symm
   exact c.acknowledge accepted rest hp
 
 #eval (collaborationAckSmoke.revision, collaborationAckSmoke.pending.length,
