@@ -53,7 +53,7 @@ async function main() {
     };
     const key = async (k, mods = {}) => {
       ed.dispatchEvent(new w.KeyboardEvent('keydown', { key: k, bubbles: true, cancelable: true, ...mods }));
-      await w.__editor.whenIdle();
+      await waitIdle(w, 'editor operation');
     };
 
     assert.strictEqual(texts().length, 3);
@@ -121,7 +121,7 @@ async function main() {
     place(2, 1);
     const sel = d.getElementById('kind'); sel.value = 'item';
     sel.dispatchEvent(new w.Event('change', { bubbles: true }));
-    await w.__editor.whenIdle();
+    await waitIdle(w, 'editor operation');
     assert.strictEqual(kinds()[2], 'item');
 
     // a stale/invalid request is rejected without corrupting the view
