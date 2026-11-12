@@ -83,6 +83,9 @@ def bridgeSnapshot (c : ClientState) : Data :=
     ("canRedo", .bool (!c.redoStack.isEmpty))
   ]
 
+def bridgeErrorData (message : String) : Data :=
+  .object #[("ok", .bool false), ("error", .string message)]
+
 def bridgeParsePos (data : Data) (key : String) : Option (Nat × Nat) := do
   let pos := data.field key
   let block ← bridgeNat? pos "block"
@@ -190,19 +193,19 @@ def bridgeUpdate : BridgeMsg → ClientState → ClientState × Cmd BridgeMsg
   | .intent data, c =>
     match bridgeIntent c data with
     | none =>
-      (c, Cmd.port "error" (.string "Lean rejected the edit intent"))
+      (c, Cmd.port "snapshot" (bridgeErrorData "Lean rejected the edit intent"))
     | some next =>
       (next, Cmd.port "snapshot" (bridgeSnapshot next))
   | .remote data, c =>
     match bridgeRemote c data with
-    | none => (c, Cmd.port "error" (.string "Malformed or invalid remote change batch"))
+    | none => (c, Cmd.port "snapshot" (bridgeErrorData "Malformed or invalid remote change batch"))
     | some next => (next, Cmd.port "snapshot" (bridgeSnapshot next))
   | .acknowledge data, c =>
     match bridgeAckInfo data with
-    | none => (c, Cmd.port "error" (.string "Malformed acknowledgement"))
+    | none => (c, Cmd.port "snapshot" (bridgeErrorData "Malformed acknowledgement"))
     | some (accepted, revision) =>
       match c.acknowledgeAcceptedAt accepted revision with
-      | none => (c, Cmd.port "error" (.string "Server acknowledgement does not match the pending prefix"))
+      | none => (c, Cmd.port "snapshot" (bridgeErrorData "Server acknowledgement does not match the pending prefix"))
       | some next =>
         (next, Cmd.port "snapshot" (bridgeSnapshot next))
   | .snapshotRequest, c =>
