@@ -1,14 +1,14 @@
 # Browser OT client
 
-The browser entry point is `BrowserMain.lean`. It imports the existing
-`Main` module and runs the real `Session`, edit builders, validation,
+The browser entry point is `BrowserMain.lean`. It imports the shared
+`Editor.Core` module and runs the real `Session`, edit builders, validation,
 undo, and redo inside the browser-targeted Lean/WebAssembly runtime.
 
 ## Prerequisites
 
 - Node.js 24 or newer
 - npm
-- The Lasm compiler pinned by `package.json` (currently 0.7.0)
+- The published Lasm CLI (`@lasm/cli` 0.7.0)
 - Lean 4.35.0, pinned in `lean-toolchain` and provisioned by Lasm
 
 ## Develop
