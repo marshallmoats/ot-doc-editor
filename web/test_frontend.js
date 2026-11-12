@@ -152,6 +152,7 @@ async function main() {
     assert(typeAtStart(w1, 'A').startsWith('A'));
     assert(typeAtStart(w1, '1').startsWith('1A'),
       'a second local edit is queued while the first request is unacknowledged');
+    await sleep(100); // ensure client one has a queued suffix when the peer races
     assert(typeAtStart(w2, 'B').startsWith('B'));
     assert(typeAtStart(w2, '2').startsWith('2B'),
       'the peer also keeps multiple local operations pending');
