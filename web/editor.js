@@ -262,5 +262,5 @@ document.getElementById("share-room").addEventListener("click",async()=>{
   try{await navigator.clipboard.writeText(url.toString());collabStatus.textContent="Invite link copied";}
   catch(_){collabStatus.textContent=url.toString();}
 });
-window.__editor={whenIdle,get state(){return state;}};
+window.__editor={whenIdle,get state(){return state;},get pendingCount(){return client?client.pending.length:0;},get requestInFlight(){return !!activeRequest;}};
 })();
