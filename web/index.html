@@ -437,6 +437,7 @@ async function flushPending() {
         await bridge.ports.remote.send(latest.changes);
         state.canUndo = !!latest.canUndo;
         state.canRedo = !!latest.canRedo;
+        render();
         // The server rejected the stale base; the transformed pending queue
         // will be submitted as a fresh request at the new revision.
         pendingRequest = null;
@@ -458,6 +459,7 @@ async function flushPending() {
         pendingRequest = null;
         state.canUndo = !!resp.canUndo;
         state.canRedo = !!resp.canRedo;
+        render();
         collabStatus.textContent = 'Connected · revision ' + state.rev;
       }
     }
