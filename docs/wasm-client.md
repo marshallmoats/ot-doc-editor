@@ -66,6 +66,6 @@ Rooms, the revision log, and request de-duplication live in memory and are
 lost on restart. Authentication, authorization, durable persistence, TLS,
 presence, and remote cursors are not implemented. Room names are identifiers,
 not access controls. Do not expose the demo server to the public internet.
-CI tests the native Lean server, browser UI fallback, operation-batch
-submission, browser/WASM compilation, generated asset serving, and the direct
-DOM-event-to-Lean transition including same-task rendering.
+CI tests the native Lean server, browser transport snapshot ordering,
+operation-batch submission, browser/WASM compilation, generated asset serving,
+and the direct DOM-event-to-Lean transition including same-task rendering.
