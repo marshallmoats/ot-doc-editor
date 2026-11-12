@@ -96,18 +96,26 @@ def collabParseCore (j : Json) : Except String (Core Char Kind) := do
   | "setKind" =>
     let oldText ← j.getObjValAs? String "old"
     let newText ← j.getObjValAs? String "kind"
-    let old ← (collabParseKind oldText).toExcept "unknown previous block kind"
-    let next ← (collabParseKind newText).toExcept "unknown block kind"
+    let old ← match collabParseKind oldText with
+      | some kind => pure kind
+      | none => throw "unknown previous block kind"
+    let next ← match collabParseKind newText with
+      | some kind => pure kind
+      | none => throw "unknown block kind"
     pure (.setK old next)
   | "split" =>
     let offset ← j.getObjValAs? Nat "offset"
     let kindText ← j.getObjValAs? String "kind"
-    let kind ← (collabParseKind kindText).toExcept "unknown block kind"
+    let kind ← match collabParseKind kindText with
+      | some kind => pure kind
+      | none => throw "unknown block kind"
     pure (.split offset kind)
   | "merge" =>
     let offset ← j.getObjValAs? Nat "offset"
     let kindText ← j.getObjValAs? String "kind"
-    let kind ← (collabParseKind kindText).toExcept "unknown block kind"
+    let kind ← match collabParseKind kindText with
+      | some kind => pure kind
+      | none => throw "unknown block kind"
     pure (.merge offset kind)
   | _ => throw "unknown core operation"
 
