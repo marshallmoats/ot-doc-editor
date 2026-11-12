@@ -7,7 +7,6 @@ shell is responsible only for DOM/selection/IME and HTTP transport.
 -/
 
 import Editor.Collaboration.Server
-import Lean.Data.Json
 import Lasm.UI
 
 open OT
