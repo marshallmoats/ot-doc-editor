@@ -424,7 +424,7 @@ async function flushPending() {
       }
     } else {
       const bridge = await window.__leanBridgeReady;
-      if (resp.changes && resp.changes.length) await bridge.ports.remote.send(JSON.stringify(resp.changes));
+      if (resp.changes && resp.changes.length) await bridge.ports.remote.send(resp.changes);
       await bridge.ports.ack.send({
         acceptedEdit: resp.acceptedEdit,
         acceptedRevision: resp.acceptedRevision
