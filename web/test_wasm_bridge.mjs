@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
-import { readdirSync } from "node:fs";
+import { readFile, readdirSync } from "node:fs";
 import { join } from "node:path";
-import { pathToFileURL } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { JSDOM } from "jsdom";
 import { TextDecoder, TextEncoder } from "node:util";
 
@@ -34,6 +34,25 @@ globalThis.requestAnimationFrame = dom.window.requestAnimationFrame.bind(dom.win
 globalThis.cancelAnimationFrame = dom.window.cancelAnimationFrame.bind(dom.window);
 globalThis.TextEncoder = TextEncoder;
 globalThis.TextDecoder = TextDecoder;
+globalThis.ResizeObserver ??= class {
+  observe() {}
+  unobserve() {}
+  disconnect() {}
+};
+const nativeFetch = globalThis.fetch.bind(globalThis);
+globalThis.fetch = async (input, init) => {
+  const url = typeof input === "string" ? input : input.url;
+  if (url.startsWith("file://")) {
+    const bytes = await readFile(fileURLToPath(url));
+    return new Response(bytes, {
+      headers: {
+        "Content-Type": url.endsWith(".wasm") ? "application/wasm" : "application/octet-stream"
+      }
+    });
+  }
+  return nativeFetch(input, init);
+};
+dom.window.fetch = globalThis.fetch;
 
 const { mount } = await import(pathToFileURL(join(dist, loader)).href);
 const app = await mount(document.getElementById("root"));
