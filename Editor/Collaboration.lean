@@ -160,7 +160,7 @@ def applySetKind (c : ClientState) (i : Nat) (kind : Kind) :
 /-- Retire an acknowledged prefix by its operation count. The count comes from
  the server's accepted operation batch; take/drop and the proof below ensure
  that only that prefix advances the confirmed snapshot. -/
-def acknowledgePrefixLength (c : ClientState) (n : Nat) :
+def acknowledgePrefixLengthAt (c : ClientState) (n revision : Nat) :
     Option ClientState := do
   if h : n ≤ c.pending.length then
     let accepted := c.pending.take n
@@ -168,9 +168,16 @@ def acknowledgePrefixLength (c : ClientState) (n : Nat) :
     have hprefix : c.pending = accepted ++ rest := by
       dsimp [accepted, rest]
       exact (List.take_append_drop n c.pending).symm
-    some (c.acknowledge accepted rest hprefix)
+    let next := c.acknowledge accepted rest hprefix
+    some { next with revision := revision }
   else
     none
+
+/-- Acknowledge one server revision when the transport does not need to
+supply an explicit revision number. -/
+def acknowledgePrefixLength (c : ClientState) (n : Nat) :
+    Option ClientState :=
+  c.acknowledgePrefixLengthAt n (c.revision + 1)
 
 end ClientState
 
