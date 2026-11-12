@@ -220,6 +220,20 @@ example :
     (c2.acknowledgeAcceptedAt accepted 2).map (·.pending.length) = some 0 := by
   decide
 
+/-- With a second local edit already queued, acknowledging the first
+transformed batch leaves the later edit pending. -/
+example :
+    let c0 := ClientState.init initialDoc
+    let first : BOps := [.blk 0 (.inl (.ins 0 '!'))]
+    let second : BOps := [.blk 0 (.inl (.ins 1 'A'))]
+    let remote : BOps := [.blk 0 (.inl (.ins 0 '?'))]
+    let c1 := c0.applyLocal first (by decide)
+    let c2 := c1.applyLocal second (by decide)
+    let c3 := c2.receiveRemote remote (by decide)
+    let accepted := (xformSeq first remote .right).1
+    (c3.acknowledgeAcceptedAt accepted 2).map (·.pending.length) = some 1 := by
+  decide
+
 end ClientState
 
 /-! ## Executable smoke scenario
