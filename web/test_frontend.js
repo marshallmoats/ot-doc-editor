@@ -165,6 +165,25 @@ async function main() {
     assert.strictEqual(JSON.stringify(w2.__editor.state.doc), JSON.stringify(authoritative.doc));
     d1.window.close(); d2.window.close();
 
+    // A split and an insertion at the split boundary must converge whichever
+    // operation wins the server's serialization race.
+    const d3 = await openRoom('ot-split-race'), d4 = await openRoom('ot-split-race');
+    const w3 = d3.window, w4 = d4.window;
+    for (let i=0;i<30 && (!w3.__editor.state || !w4.__editor.state);i++) await sleep(50);
+    const ed3=w3.document.getElementById('editor');
+    const r3=w3.document.createRange(), t3=ed3.children[1].firstChild;
+    r3.setStart(t3,0);r3.collapse(true);w3.getSelection().removeAllRanges();w3.getSelection().addRange(r3);
+    ed3.dispatchEvent(new w3.InputEvent('beforeinput',{inputType:'insertParagraph',bubbles:true,cancelable:true}));
+    assert.strictEqual(ed3.children.length,4,'split is rendered optimistically');
+    assert(typeAtStart(w4,'Z').startsWith('Z'));
+    await Promise.all([waitIdle(w3,'split client'),waitIdle(w4,'insert client')]);
+    await sleep(450);
+    const splitDoc=await (await fetch(base+'/collab?room=ot-split-race')).json();
+    assert(splitDoc.ok && splitDoc.doc.length===4 && splitDoc.doc[1].text.startsWith('Z'));
+    assert.strictEqual(JSON.stringify(w3.__editor.state.doc),JSON.stringify(splitDoc.doc));
+    assert.strictEqual(JSON.stringify(w4.__editor.state.doc),JSON.stringify(splitDoc.doc));
+    d3.window.close();d4.window.close();
+
     console.log('frontend end-to-end tests passed');
     w.close();
   } finally { server.kill(); }
