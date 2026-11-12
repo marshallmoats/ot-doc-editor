@@ -1701,13 +1701,5 @@ def typeInCell (key : CellKey) (txt : String) : List WorldOp :=
 
 -- Two users, both at revision 0: one types in cell (7,0,0) and the other types in
 -- cell (7,0,1) and in the main text. Then the cell edit is undone.
-#eval
-  let (s1, _) := worldDemo.submit 0 (typeInCell (7, 0, 0) "hi")
-  let (s2, _) := s1.submit 0 (typeInCell (7, 0, 1) "yo" ++ ([.main (.blk 0 (.inl (.ins 0 (.ch '>'))))] : List WorldOp))
-  let s3 := s2.undo 0
-  let (m2, c2) := s2.doc
-  let (m3, c3) := s3.doc
-  ((showDoc m2, showDoc (c2 (7, 0, 0)), showDoc (c2 (7, 0, 1))),
-   (showDoc m3, showDoc (c3 (7, 0, 0)), showDoc (c3 (7, 0, 1))))
 
 end OT
