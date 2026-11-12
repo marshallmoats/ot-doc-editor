@@ -122,8 +122,8 @@ function render() {
   state.doc.forEach((b, i) => frag.appendChild(blockEl(b, i)));
   while (editor.firstChild) editor.removeChild(editor.firstChild);
   editor.appendChild(frag);
-  els.undo.disabled = !state.canUndo;
-  els.redo.disabled = !state.canRedo;
+  els.undo.disabled = !state.canUndo || state.pendingCount > 0;
+  els.redo.disabled = !state.canRedo || state.pendingCount > 0;
   els.rev.textContent = 'rev ' + state.rev;
   syncKind();
 }
