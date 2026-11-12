@@ -6,10 +6,17 @@ import subprocess
 import sys
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-EXE = os.environ.get(
-    "OT_COLLAB_EXE",
-    os.path.join(ROOT, ".lake", "build", "bin", "ot-collab.exe"),
-)
+def collaboration_executable():
+    configured = os.environ.get("OT_COLLAB_EXE")
+    if configured:
+        return configured
+    build = os.path.join(ROOT, ".lake", "build", "bin")
+    candidates = [os.path.join(build, "ot-collab"),
+                  os.path.join(build, "ot-collab.exe")]
+    return next((path for path in candidates if os.path.exists(path)), candidates[0])
+
+
+EXE = collaboration_executable()
 
 
 def main():
