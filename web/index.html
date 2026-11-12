@@ -104,11 +104,19 @@ let bridgeSnapshotWaiters = [];
 // state-dependent command.
 function sendLeanAndWait(bridge, portName, payload, matches = () => true) {
   const task = bridgePortQueue.then(() => new Promise((resolve, reject) => {
-    const waiter = { resolve, reject, matches };
+    const waiter = {
+      matches,
+      resolve: value => { clearTimeout(timer); resolve(value); },
+      reject: error => { clearTimeout(timer); reject(error); }
+    };
+    const timer = setTimeout(() => {
+      bridgeSnapshotWaiters = bridgeSnapshotWaiters.filter(w => w !== waiter);
+      reject(new Error('Timed out waiting for Lean snapshot after ' + portName));
+    }, 10000);
     bridgeSnapshotWaiters.push(waiter);
     Promise.resolve(bridge.ports[portName].send(payload)).catch(error => {
       bridgeSnapshotWaiters = bridgeSnapshotWaiters.filter(w => w !== waiter);
-      reject(error);
+      waiter.reject(error);
     });
   }));
   bridgePortQueue = task.catch(() => {});
@@ -436,7 +444,11 @@ window.__editorBridgeSnapshot = raw => {
   const next = raw;
   if (!next || next.ok === false) {
     failedFlush = true;
-    showError(next && next.error ? next.error : 'Lean client rejected an update');
+    const message = next && next.error ? next.error : 'Lean client rejected an update';
+    showError(message);
+    const waiters = bridgeSnapshotWaiters;
+    bridgeSnapshotWaiters = [];
+    waiters.forEach(waiter => waiter.reject(new Error(message)));
     return;
   }
   const readyWaiters = [];
