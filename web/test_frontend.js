@@ -54,6 +54,9 @@ async function main() {
     input('insertText', 'a'); input('insertText', 'b'); await input('insertText', 'c');
     assert.strictEqual(texts()[1].slice(0, 3), 'abc');
     assert.strictEqual(w.__editor.state.rev, 3);
+    let [typingNode, typingOffset] = caret();
+    assert.strictEqual(typingNode.data.slice(0, typingOffset), 'abc',
+      'caret must advance to the end of each accepted insertion');
 
     // Enter in the middle splits; Backspace at start of block merges back
     place(1, 3);
