@@ -132,7 +132,7 @@ async function main() {
     });
     const d1 = await openRoom('ot-race'), d2 = await openRoom('ot-race');
     const w1 = d1.window, w2 = d2.window;
-    await sleep(250);
+    for (let i=0;i<30 && (!w1.__editor.state || !w2.__editor.state);i++) await sleep(50);
     const typeAtStart = (win, ch) => {
       const ed2 = win.document.getElementById('editor');
       const range = win.document.createRange(), text = ed2.children[1].firstChild;
@@ -151,8 +151,8 @@ async function main() {
     assert(authoritative.ok);
     assert(authoritative.doc[1].text.includes('A') && authoritative.doc[1].text.includes('B'),
       'server retains both concurrent edits');
-    assert.deepStrictEqual(w1.__editor.state.doc, authoritative.doc);
-    assert.deepStrictEqual(w2.__editor.state.doc, authoritative.doc);
+    assert.strictEqual(JSON.stringify(w1.__editor.state.doc), JSON.stringify(authoritative.doc));
+    assert.strictEqual(JSON.stringify(w2.__editor.state.doc), JSON.stringify(authoritative.doc));
     d1.window.close(); d2.window.close();
 
     console.log('frontend end-to-end tests passed');
