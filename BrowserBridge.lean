@@ -24,6 +24,33 @@ def bridgeKindName : Kind → String
   | .item => "item"
   | .quote => "quote"
 
+def bridgeCoreJson : Core Char Kind → Json
+  | .inl .nop => Json.mkObj [("op", Json.str "nop")]
+  | .inl (.ins p ch) => Json.mkObj [
+      ("op", Json.str "ins"), ("offset", toJson p),
+      ("char", Json.str (String.singleton ch))]
+  | .inl (.del p ch) => Json.mkObj [
+      ("op", Json.str "del"), ("offset", toJson p),
+      ("char", Json.str (String.singleton ch))]
+  | .setK old next => Json.mkObj [
+      ("op", Json.str "setKind"), ("old", Json.str (bridgeKindName old)),
+      ("kind", Json.str (bridgeKindName next))]
+  | .split p kind => Json.mkObj [
+      ("op", Json.str "split"), ("offset", toJson p),
+      ("kind", Json.str (bridgeKindName kind))]
+  | .merge p kind => Json.mkObj [
+      ("op", Json.str "merge"), ("offset", toJson p),
+      ("kind", Json.str (bridgeKindName kind))]
+
+def bridgeBOpJson : BOp Char Kind → Json
+  | .nop => Json.mkObj [("tag", Json.str "nop")]
+  | .blk block core => Json.mkObj [
+      ("tag", Json.str "blk"), ("block", toJson block),
+      ("core", bridgeCoreJson core)]
+
+def bridgeOpsJson (ops : BOps) : Json :=
+  Json.arr (ops.map bridgeBOpJson).toArray
+
 def bridgeDocJson (d : BDoc) : Json :=
   Json.arr (d.map fun b =>
     Json.mkObj [
@@ -38,6 +65,7 @@ def bridgeSnapshot (c : ClientState) : String :=
     ("confirmedDoc", bridgeDocJson c.confirmedDoc),
     ("rev", toJson c.revision),
     ("pendingCount", toJson c.pending.length),
+    ("pendingOps", bridgeOpsJson c.pending),
     ("canUndo", Json.bool (!c.undoStack.isEmpty)),
     ("canRedo", Json.bool (!c.redoStack.isEmpty))
   ]).compress
@@ -127,21 +155,31 @@ def bridgeIntent (c : ClientState) (raw : String) : Option ClientState :=
   match Json.parse raw with
   | .error _ => none
   | .ok j =>
-    match j.getObjValAs? String "cmd",
-        bridgeParsePos j "from",
-        bridgeParsePos j "to",
-        j.getObjValAs? String "text" with
-    | .ok "replace", .ok (i, p), .ok (k, q), .ok txt =>
-      c.applyReplace i p k q txt
-    | _, _, _, _ => none
+    match j.getObjValAs? String "cmd" with
+    | .ok "replace" =>
+      match bridgeParsePos j "from", bridgeParsePos j "to",
+          j.getObjValAs? String "text" with
+      | .ok (i, p), .ok (k, q), .ok txt => c.applyReplace i p k q txt
+      | _, _, _ => none
+    | .ok "setKind" =>
+      match j.getObjValAs? Nat "block", j.getObjValAs? String "kind" with
+      | .ok block, .ok kindText =>
+        match bridgeKind? kindText with
+        | some kind => c.applySetKind block kind
+        | none => none
+      | _, _ => none
+    | _ => none
 
-def bridgeAckInfo (raw : String) : Option (Nat × Nat) :=
+def bridgeAckInfo (raw : String) : Option (BOps × Nat) :=
   match Json.parse raw with
   | .error _ => none
   | .ok j =>
-    match j.getObjValAs? Nat "acceptedCount",
+    match j.getObjVal? "acceptedEdit",
         j.getObjValAs? Nat "acceptedRevision" with
-    | .ok count, .ok revision => some (count, revision)
+    | .ok acceptedJson, .ok revision =>
+      match bridgeOps? acceptedJson with
+      | some accepted => some (accepted, revision)
+      | none => none
     | _, _ => none
 
 def bridgeInit (_ : Unit) : ClientState × Cmd BridgeMsg :=
@@ -165,9 +203,9 @@ def bridgeUpdate : BridgeMsg → ClientState → ClientState × Cmd BridgeMsg
   | .acknowledge raw, c =>
     match bridgeAckInfo raw with
     | none => (c, Cmd.port "error" (.string "Malformed acknowledgement"))
-    | some (count, revision) =>
-      match c.acknowledgePrefixLengthAt count revision with
-      | none => (c, Cmd.port "error" (.string "Acknowledgement is not a pending prefix"))
+    | some (accepted, revision) =>
+      match c.acknowledgeAcceptedAt accepted revision with
+      | none => (c, Cmd.port "error" (.string "Server acknowledgement does not match the pending prefix"))
       | some next =>
         (next, Cmd.port "snapshot" (.string (bridgeSnapshot next)))
 
