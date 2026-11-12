@@ -80,7 +80,7 @@ def handle (s : Session) (line : String) : Json × Session :=
 partial def loop (hin hout : IO.FS.Stream) (s : Session) : IO Unit := do
   let line ← hin.getLine
   if line.isEmpty then return
-  let (resp, s') := handle s line.trim
+  let (resp, s') := handle s line.trimAscii.toString
   hout.putStrLn resp.compress
   hout.flush
   loop hin hout s'
