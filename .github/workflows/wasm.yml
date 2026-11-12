@@ -34,5 +34,9 @@ jobs:
           node-version: 24
       - run: npm install
       - run: npm run wasm:build
+      - name: Install browser runtime test dependency
+        run: npm install --no-save jsdom
+      - name: Test Lean/WASM client port transitions
+        run: node web/test_wasm_bridge.mjs
       - name: Test generated browser WASM serving
         run: python3 web/test_wasm_serving.py
