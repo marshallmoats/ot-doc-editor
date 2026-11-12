@@ -41,7 +41,7 @@ globalThis.ResizeObserver ??= class {
 };
 const nativeFetch = globalThis.fetch.bind(globalThis);
 globalThis.fetch = async (input, init) => {
-  const url = typeof input === "string" ? input : input.url;
+  const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
   if (url.startsWith("file://")) {
     const bytes = await readFile(fileURLToPath(url));
     return new Response(bytes, {
