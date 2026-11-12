@@ -96,7 +96,8 @@ document.getElementById('room-name').textContent = roomName;
 let state = { doc: [], rev: 0, canUndo: false, canRedo: false, pendingOps: [], pendingCount: 0 };
 let lastPos = { block: 0, offset: 0 };
 let networkBusy = false;
-let failedFlush = false;   // last known caret (focus end), in blocks / code points
+let failedFlush = false;
+let pendingRequest = null;   // last known caret (focus end), in blocks / code points
 let statusTimer = null;
 
 /* ---- code point helpers: Lean counts Unicode scalar values, JS strings count UTF-16 units ---- */
@@ -210,9 +211,9 @@ async function api(msg) {
     ...msg,
     room: roomName,
     clientId,
-    requestId: (window.crypto && crypto.randomUUID)
-      ? crypto.randomUUID() : clientId + '-' + Date.now() + '-' + Math.random(),
-    baseRevision: state.rev,
+    requestId: msg.requestId || ((window.crypto && crypto.randomUUID)
+      ? crypto.randomUUID() : clientId + '-' + Date.now() + '-' + Math.random()),
+    baseRevision: msg.baseRevision === undefined ? state.rev : msg.baseRevision,
   };
   const r = await fetch('/collab', {
     method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload),
@@ -396,6 +397,7 @@ window.__editorBridgeSnapshot = raw => {
   const caret = focused ? currentRange().to : lastPos;
   const next = raw;
   if (!next || next.ok === false) {
+    failedFlush = true;
     showError(next && next.error ? next.error : 'Lean client rejected an update');
     return;
   }
@@ -412,9 +414,21 @@ async function flushPending() {
   if (networkBusy || failedFlush || !window.__leanBridgeReady) return;
   if (!state.pendingOps || !state.pendingOps.length) return;
   networkBusy = true;
-  const submitted = state.pendingOps;
+  if (!pendingRequest) {
+    pendingRequest = {
+      requestId: (window.crypto && crypto.randomUUID)
+        ? crypto.randomUUID() : clientId + '-' + Date.now() + '-' + Math.random(),
+      baseRevision: state.rev,
+      ops: state.pendingOps
+    };
+  }
   try {
-    const resp = await api({ cmd: 'submitOps', ops: submitted });
+    const resp = await api({
+      cmd: 'submitOps',
+      ops: pendingRequest.ops,
+      requestId: pendingRequest.requestId,
+      baseRevision: pendingRequest.baseRevision
+    });
     if (!resp.ok) {
       const latest = await api({ cmd: 'state' });
       if (latest.ok && latest.rev > state.rev && latest.changes && latest.changes.length) {
@@ -422,6 +436,9 @@ async function flushPending() {
         await bridge.ports.remote.send(latest.changes);
         state.canUndo = !!latest.canUndo;
         state.canRedo = !!latest.canRedo;
+        // The server rejected the stale base; the transformed pending queue
+        // will be submitted as a fresh request at the new revision.
+        pendingRequest = null;
       } else {
         failedFlush = true;
         showError(resp.error || 'request failed');
@@ -433,11 +450,19 @@ async function flushPending() {
         acceptedEdit: resp.acceptedEdit,
         acceptedRevision: resp.acceptedRevision
       });
-      state.canUndo = !!resp.canUndo;
-      state.canRedo = !!resp.canRedo;
-      collabStatus.textContent = 'Connected · revision ' + state.rev;
+      if (state.rev !== resp.acceptedRevision) {
+        failedFlush = true;
+        showError('Lean client could not confirm the accepted batch');
+      } else {
+        pendingRequest = null;
+        state.canUndo = !!resp.canUndo;
+        state.canRedo = !!resp.canRedo;
+        collabStatus.textContent = 'Connected · revision ' + state.rev;
+      }
     }
   } catch (e) {
+    // Keep the same request ID and exact payload: the server may have accepted
+    // the batch even if its HTTP response was lost.
     failedFlush = true;
     showError(String(e));
   } finally {
