@@ -34,8 +34,7 @@ def appendBang (s : Session) : Session :=
 
 /-- A browser-local edit enters the Lean pending queue immediately. -/
 def clientLocalInsert (c : ClientState) : ClientState :=
-  let e : BOps := [.blk 0 (.inl (.ins 0 '!'))]
-  if h : ValidSeq e c.doc then c.applyLocal e h else c
+  (c.applyReplace 0 0 0 0 "!").getD c
 
 /-- Simulate a concurrent peer edit expressed against the confirmed snapshot. -/
 def clientRemoteInsert (c : ClientState) : ClientState :=
