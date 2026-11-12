@@ -14,7 +14,7 @@ def OT.Kind.ofStr? : String → Option Kind
 
 def docJson (d : BDoc) : Json :=
   Json.arr (d.map fun b =>
-    Json.mkObj [("kind", Json.str b.kind.toStr), ("text", Json.str (String.mk b.text))]).toArray
+    Json.mkObj [("kind", Json.str b.kind.toStr), ("text", Json.str (String.ofList b.text))]).toArray
 
 def respond (s : Session) (cursor : Option (Nat × Nat)) : Json :=
   Json.mkObj [

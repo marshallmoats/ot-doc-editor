@@ -157,4 +157,4 @@ def collaborationSmoke : ClientState := by
   exact c1.receiveRemote remote hr
 
 #eval (collaborationSmoke.revision, collaborationSmoke.pending.length,
-  String.intercalate "\\n\\n" (collaborationSmoke.doc.map fun b => String.mk b.text))
+  String.intercalate "\\n\\n" (collaborationSmoke.doc.map fun b => String.ofList b.text))
