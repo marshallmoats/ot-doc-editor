@@ -98,8 +98,10 @@ function integrate(changes, snapshot) {
   for (let change of changes || []) {
     if (change.revision <= client.revision) continue;
     change = { ...change, edit: (change.edit || []).map(OTClient.decode) };
-    const caretFocused=document.activeElement===editor;
-    let caret=caretFocused ? currentRange().to : lastPos;
+    const selection=getSelection();
+    const selectionInside=!!(selection && selection.rangeCount && editor.contains(selection.anchorNode));
+    const caretFocused=selectionInside || document.activeElement===editor;
+    let caret=selectionInside ? currentRange().to : lastPos;
     if (change.clientId===clientId && requestCounts.has(change.requestId)) {
       const count=requestCounts.get(change.requestId);
       OTClient.acknowledge(client,change,count);
