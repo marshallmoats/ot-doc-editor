@@ -1,30 +1,40 @@
-# Browser OT client
+# Browser/WebAssembly demo
 
-The browser entry point is `BrowserMain.lean`. It imports the shared
-`Editor.Core` module and runs the real Lean session, edit builders,
-validation, undo, and redo inside the browser-targeted WebAssembly runtime.
+The browser entry point is `BrowserMain.lean`. It runs the shared Lean editor
+model in WebAssembly; the browser does not reimplement the OT/document logic in
+JavaScript.
 
-## Prerequisites
+## Run the demo
 
-- Node.js 24 or newer
-- npm
-- Lasm CLI (`@lasm/cli` 0.7.0)
-- Lean 4.35.0, pinned in `lean-toolchain`
+Prerequisites: Node.js 24+, npm, and the Lean toolchain pinned in
+`lean-toolchain`.
 
-## Develop
+From the repository root:
 
 ```sh
 npm install
 npm run wasm:dev
 ```
 
-## Production build
+Open the local URL printed by Lasm in your browser. The demo has two parts:
+
+1. **Interactive editor:** append an edit, then undo and redo it. These actions
+   execute the shared Lean `Session` and its validity checks in WebAssembly.
+2. **Collaboration replay:** a deterministic Lean smoke scenario submits two
+   edits from different clients against revision zero. The revisioned server
+   transforms the stale second edit and displays the resulting revision-two
+   document.
+
+For a production bundle build:
 
 ```sh
 npm run wasm:build
 ```
 
-## Collaboration core
+The GitHub Actions workflow builds both the Lean project and the browser
+WebAssembly target on pushes and pull requests.
+
+## Collaboration architecture and current boundary
 
 `Editor/Collaboration.lean` provides a proof-carrying optimistic client state:
 
@@ -34,21 +44,14 @@ npm run wasm:build
 - undo and redo history rebasing, with `ValidChain` proofs maintained;
 - acknowledgement of a prefix of the pending queue without losing subsequent local edits.
 
-The remote-receive function expects a server-accepted operation batch expressed
-against the client's current confirmed revision. The acknowledgement function
-requires the accepted batch to match a prefix of pending operations. This
-makes protocol ordering explicit and rejects mismatched acknowledgements.
-
-## Not yet implemented
-
 `Editor/Collaboration/Server.lean` adds a transport-independent, revisioned
-server boundary. It accepts edits against historical snapshots, transforms them
-over the intervening server log, preserves the server replay-validity proof,
-and returns receipts carrying client/request identity and the new revision. A
-Lean smoke scenario submits two edits from revision zero and exercises the
-server's total ordering.
+server boundary. It accepts edits against historical snapshots, transforms
+them over intervening server log entries, preserves the server replay-validity
+proof, and returns receipts carrying client/request identity and the new
+revision.
 
-The server boundary is not yet wired to HTTP/WebSocket transport or the browser
-UI. Authentication, request de-duplication, persistence, remote delivery, and
-two-browser convergence tests remain. Do not treat this as a production-ready
-multi-user editor until those pieces and tests are complete.
+**Important:** the collaboration replay in the browser is deterministic and
+runs locally; it is not a live multi-user session. HTTP/WebSocket transport,
+authentication, request de-duplication, persistence, remote delivery, remote
+cursors, and two-browser convergence tests are still future work. Do not
+present this milestone as a production-ready multi-user editor.

@@ -1,12 +1,13 @@
 /-
-# Browser-side OT smoke test
+# Browser/WebAssembly demonstration
 
-This entry point runs the existing Lean session and edit builders in the browser.
-The first milestone deliberately reuses Main's pure editor logic; the next extraction
-will move Session and the edit builders into an IO-free Editor.Core module.
+The interactive panel uses the shared Lean editor session for local edits,
+validation, undo, and redo. The second panel runs the revisioned collaboration
+server smoke scenario in Lean: two clients submit edits against revision zero,
+and the server transforms the second edit over the first.
 -/
 
-import Editor.Core
+import Editor.Collaboration.Server
 import Lasm.UI
 
 open OT
@@ -38,17 +39,23 @@ def update : Msg → Session → Session
       | some (s', _) => s'
       | none => s
 
-def documentText (s : Session) : String :=
-  String.intercalate "\n\n" (s.doc.map fun b => String.mk b.text)
+def documentText (d : BDoc) : String :=
+  String.intercalate "\n\n" (d.map fun b => String.mk b.text)
 
 def view (s : Session) : Html Msg :=
   html! <main>
-    <h1>Lean OT engine running in WebAssembly</h1>
-    <p>This page applies edits, undo, and redo using the existing verified Lean session.</p>
-    <pre>{documentText s}</pre>
+    <h1>Verified OT editor</h1>
+    <p>Lean 4 running in WebAssembly. Every interactive edit is checked by the shared Lean document model.</p>
+    <h2>Interactive editor</h2>
+    <pre>{documentText s.doc}</pre>
     <button onClick={Msg.append}>Append !</button>
     <button onClick={Msg.undo}>Undo</button>
     <button onClick={Msg.redo}>Redo</button>
+    <h2>Two-client collaboration replay</h2>
+    <p>Both edits start at revision 0. The server accepts the first, transforms the stale second edit, and serializes both.</p>
+    <p>{s!"Server revision: {CollaborationServer.revision collaborationServerSmoke}"}</p>
+    <pre>{documentText collaborationServerSmoke.srv.doc}</pre>
+    <p>This is an in-browser deterministic server-core demonstration, not a live network session.</p>
   </main>
 
 def main : IO Unit :=
