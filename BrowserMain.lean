@@ -44,7 +44,7 @@ def clientRemoteInsert (c : ClientState) : ClientState :=
 /-- Acknowledge the complete pending prefix without replaying it into the
 optimistic document. The Lean ClientState proof checks the prefix relation. -/
 def clientAcknowledge (c : ClientState) : ClientState :=
-  c.acknowledge c.pending [] (by simp)
+  (c.acknowledgePrefixLength c c.pending.length).getD c
 
 def update : Msg → AppState → AppState
   | .append, (s, c) => (appendBang s, c)
