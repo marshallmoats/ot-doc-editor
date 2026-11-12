@@ -197,6 +197,7 @@
     client.pending = pending;
     client.doc = applyAll(remote, client.doc);
     client.revision = change.revision;
+    return remote;
   }
   function acknowledge(client, change, count) {
     client.confirmedDoc = applyAll(change.edit, client.confirmedDoc);
