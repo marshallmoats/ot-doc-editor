@@ -76,15 +76,24 @@ const initial = snapshots.at(-1);
 assert.equal(initial.ok, true);
 assert.equal(initial.pendingCount, 0);
 
-const optimistic = await sendAndRead("intent", {
+const firstLocal = await sendAndRead("intent", {
   cmd: "replace",
   from: { block: 0, offset: 0 },
   to: { block: 0, offset: 0 },
   text: "!"
 });
-assert.equal(optimistic.ok, true);
-assert.equal(optimistic.pendingCount, 1);
-assert.equal(optimistic.pendingOps.length, 1);
+assert.equal(firstLocal.ok, true);
+assert.equal(firstLocal.pendingCount, 1);
+
+const secondLocal = await sendAndRead("intent", {
+  cmd: "replace",
+  from: { block: 0, offset: 1 },
+  to: { block: 0, offset: 1 },
+  text: "A"
+});
+assert.equal(secondLocal.ok, true);
+assert.equal(secondLocal.pendingCount, 2);
+assert.equal(secondLocal.pendingOps.length, 2);
 
 const rebased = await sendAndRead("remote", [[{
   tag: "blk",
@@ -93,11 +102,12 @@ const rebased = await sendAndRead("remote", [[{
 }]]);
 assert.equal(rebased.ok, true);
 assert.equal(rebased.rev, 1);
-assert.equal(rebased.pendingCount, 1);
+assert.equal(rebased.pendingCount, 2);
 assert.equal(rebased.pendingOps[0].core.offset, 1);
-assert.ok(rebased.doc[0].text.startsWith("?!"));
+assert.equal(rebased.pendingOps[1].core.offset, 2);
+assert.ok(rebased.doc[0].text.startsWith("?!A"));
 
-const acknowledged = await sendAndRead("ack", {
+const firstAcknowledged = await sendAndRead("ack", {
   acceptedEdit: [{
     tag: "blk",
     block: 0,
@@ -105,10 +115,24 @@ const acknowledged = await sendAndRead("ack", {
   }],
   acceptedRevision: 2
 });
-assert.equal(acknowledged.ok, true);
-assert.equal(acknowledged.rev, 2);
-assert.equal(acknowledged.pendingCount, 0);
-assert.ok(acknowledged.doc[0].text.startsWith("?!"));
+assert.equal(firstAcknowledged.ok, true);
+assert.equal(firstAcknowledged.rev, 2);
+assert.equal(firstAcknowledged.pendingCount, 1);
+assert.equal(firstAcknowledged.pendingOps[0].core.offset, 2);
+assert.ok(firstAcknowledged.doc[0].text.startsWith("?!A"));
+
+const secondAcknowledged = await sendAndRead("ack", {
+  acceptedEdit: [{
+    tag: "blk",
+    block: 0,
+    core: { op: "ins", offset: 2, char: "A" }
+  }],
+  acceptedRevision: 3
+});
+assert.equal(secondAcknowledged.ok, true);
+assert.equal(secondAcknowledged.rev, 3);
+assert.equal(secondAcknowledged.pendingCount, 0);
+assert.ok(secondAcknowledged.doc[0].text.startsWith("?!A"));
 
 dom.window.close();
 console.log("Lean/WASM browser client intent, remote rebase, and prefix acknowledgement passed");
