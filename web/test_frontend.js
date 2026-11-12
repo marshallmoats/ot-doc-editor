@@ -15,7 +15,9 @@ const base = `http://127.0.0.1:${PORT}`;
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 
 async function main() {
-  const server = spawn('python3', [path.join(__dirname, 'server.py'), String(PORT)], { stdio: 'ignore' });
+  const server = spawn('python3', [path.join(__dirname, 'server.py'), String(PORT)], {
+    stdio: 'ignore', env: { ...process.env, OT_COLLAB_DELAY_MS: '300' },
+  });
   try {
     for (let i = 0; i < 50; i++) { try { await fetch(base + '/'); break; } catch { await sleep(100); } }
     const dom = await JSDOM.fromFile(path.join(__dirname, 'index.html'), {
@@ -53,6 +55,20 @@ async function main() {
     assert.strictEqual(texts().length, 3);
     assert.strictEqual(kinds()[0], 'h1');
     const original = texts();
+
+    // With an intentional server delay, the first keystroke must appear in the
+    // local document before the HTTP acknowledgement can arrive.
+    place(1, 0);
+    const optimisticEvent = new w.InputEvent('beforeinput', {
+      inputType: 'insertText', data: 'O', bubbles: true, cancelable: true,
+    });
+    ed.dispatchEvent(optimisticEvent);
+    assert(optimisticEvent.defaultPrevented);
+    assert.strictEqual(texts()[1].slice(0, 1), 'O',
+      'local edit should render immediately, before delayed server acknowledgement');
+    await w.__editor.whenIdle();
+    assert.strictEqual(texts()[1].slice(0, 1), 'O',
+      'acknowledgement should preserve the optimistic edit');
 
     // typing: three fast keystrokes queued back to back must land in order
     place(1, 0);
