@@ -34,3 +34,5 @@ jobs:
           node-version: 24
       - run: npm install
       - run: npm run wasm:build
+      - name: Test generated browser WASM serving
+        run: python3 web/test_wasm_serving.py
