@@ -1,8 +1,13 @@
 // End-to-end UI test: real page + real Lean backend, simulated with jsdom.
 //   npm install jsdom && node web/test_frontend.js
+import { createRequire } from 'node:module';
+import { fileURLToPath } from 'node:url';
+import path from 'node:path';
+
+const require = createRequire(import.meta.url);
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const { JSDOM } = require(process.env.JSDOM_PATH || 'jsdom');
 const { spawn } = require('child_process');
-const path = require('path');
 const assert = require('assert');
 
 const PORT = 8770 + Math.floor(Math.random() * 100);
