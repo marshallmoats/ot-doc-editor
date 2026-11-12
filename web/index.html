@@ -266,7 +266,12 @@ async function replace(from, to, text) {
   const optimisticCaret = applyOptimisticReplace(from, to, text);
   try {
     const resp = await api({ cmd: 'replace', from, to, text });
-    apply(resp, text ? caretAfterInsert(from, text) : from);
+    if (resp.ok) apply(resp, text ? caretAfterInsert(from, text) : from);
+    else {
+      showError(resp.error || 'edit rejected');
+      const authoritative = await api({ cmd: 'state' }).catch(() => null);
+      if (authoritative && authoritative.ok) apply(authoritative, from);
+    }
   } catch (e) {
     showError(String(e));
     const authoritative = await api({ cmd: 'state' }).catch(() => null);
