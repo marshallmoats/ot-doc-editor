@@ -227,8 +227,8 @@ function apply(resp, keep) {
 }
 
 function caretAfterInsert(from, text) {
-  const normalized = text.replace(/\\r\\n?/g, '\\n');
-  const lines = normalized.split('\\n');
+  const normalized = text.replace(/\r\n?/g, '\n');
+  const lines = normalized.split('\n');
   if (lines.length === 1) return { block: from.block, offset: from.offset + cpLen(lines[0]) };
   return { block: from.block + lines.length - 1, offset: cpLen(lines[lines.length - 1]) };
 }
