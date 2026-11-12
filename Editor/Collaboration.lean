@@ -84,7 +84,9 @@ def applyLocal (c : ClientState) (e : BOps) (he : ValidSeq e c.doc) : ClientStat
   hdoc := by rw [applyAll_append, c.hdoc]
   hpending := by
     rw [ValidSeq_append]
-    exact ⟨c.hpending, he⟩
+    have he' : ValidSeq e (applyAll c.pending c.confirmedDoc) := by
+      simpa [c.hdoc] using he
+    exact ⟨c.hpending, he'⟩
   uchain := ValidChain.push_inv e c.doc he c.undoStack c.uchain
   rchain := trivial
 
@@ -151,7 +153,7 @@ def collaborationSmoke : ClientState := by
   have ha : ValidSeq a c0.doc := by decide
   let c1 := c0.applyLocal a ha
   let remote : BOps := [.blk 2 (.inl (.ins 0 '?'))]
-  have hr : ValidSeq remote c1.confirmedDoc := by decide
+  have hr : ValidSeq remote initialDoc := by decide
   exact c1.receiveRemote remote hr
 
 #eval (collaborationSmoke.revision, collaborationSmoke.pending.length,
