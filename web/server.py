@@ -185,7 +185,6 @@ try {{
   const app = await mount(document.getElementById("lean-client"));
   window.__resolveLeanBridge(app);
   app.ports.snapshot.subscribe(raw => window.__editorBridgeSnapshot?.(raw));
-  await app.ports["snapshot-request"].send("ready");
 }} catch (error) {{
   window.__rejectLeanBridge(error);
   window.__editorBridgeError?.(String(error));
