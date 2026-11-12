@@ -98,14 +98,14 @@ def collaborationServerSmoke : CollaborationServer := by
   let bob : BOps := [.blk 2 (.inl (.ins 0 '?'))]
   have ha : ValidSeq alice initialDoc := by decide
   have hb : ValidSeq bob initialDoc := by decide
-  let (s1, _) := s0.submit 0 alice (by decide) ha
+  let s1 := (s0.submit 0 alice (by decide) ha).1
   have hbase1 : 0 ≤ s1.revision := by
-    simp [CollaborationServer.revision]
-  have hinit1 : s1.srv.init = initialDoc := by
-    rfl
+    simp [s1, s0, CollaborationServer.revision, CollaborationServer.submit,
+      CollaborationServer.init, Server.submit]
   have hb1 : ValidSeq bob (s1.srv.docAt 0) := by
-    simpa [Server.docAt, hinit1] using hb
-  let (s2, _) := s1.submit 0 bob hbase1 hb1
+    simpa [s1, s0, Server.docAt, CollaborationServer.submit,
+      CollaborationServer.init, Server.submit, flat, applyAll] using hb
+  let s2 := (s1.submit 0 bob hbase1 hb1).1
   exact s2
 
 #eval (collaborationServerSmoke.revision,
