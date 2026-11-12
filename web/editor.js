@@ -113,7 +113,10 @@ function integrate(changes, snapshot) {
     snapshotFromClient(); render(); if(caretFocused)setCaret(caret);
   }
   if (state) {
-    if (snapshot) { state.canUndo=snapshot.canUndo; state.canRedo=snapshot.canRedo; }
+    if (snapshot) {
+      state.canUndo=snapshot.canUndo; state.canRedo=snapshot.canRedo;
+      els.undo.disabled=!state.canUndo; els.redo.disabled=!state.canRedo;
+    }
     collabStatus.textContent="Connected · revision "+state.rev;
   }
   settleIdle();
@@ -148,7 +151,10 @@ async function poll() {
     const remote=await r.json();
     if(!remote.ok){collabStatus.textContent="Disconnected";return;}
     integrate(remote.changes||[],remote);
-    if(state){state.canUndo=remote.canUndo;state.canRedo=remote.canRedo;render();}
+    if(state){
+      state.canUndo=remote.canUndo;state.canRedo=remote.canRedo;
+      els.undo.disabled=!state.canUndo;els.redo.disabled=!state.canRedo;
+    }
     if(client.pending.length&&!activeRequest)sendPending();
   } catch(_) { collabStatus.textContent="Reconnecting…"; }
 }
