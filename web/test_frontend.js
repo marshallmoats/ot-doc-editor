@@ -15,11 +15,11 @@ const base = `http://127.0.0.1:${PORT}`;
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 
 async function main() {
-  const server = spawn('python3', [path.join(__dirname, 'server.py'), String(PORT)], { stdio: 'ignore' });
+  const server = spawn('python3', [path.join(__dirname, 'server.py'), String(PORT)], { stdio: 'ignore', env: { ...process.env, OT_COLLAB_DELAY_MS: "300" } });
   try {
     for (let i = 0; i < 50; i++) { try { await fetch(base + '/'); break; } catch { await sleep(100); } }
     const dom = await JSDOM.fromFile(path.join(__dirname, 'index.html'), {
-      runScripts: 'dangerously', pretendToBeVisual: true,
+      runScripts: 'dangerously', resources: 'usable', pretendToBeVisual: true,
       beforeParse(w) { w.fetch = (u, o) => fetch(base + u, o); },
     });
     const w = dom.window, d = w.document;
@@ -56,9 +56,17 @@ async function main() {
 
     // typing: three fast keystrokes queued back to back must land in order
     place(1, 0);
-    input('insertText', 'a'); input('insertText', 'b'); await input('insertText', 'c');
+    const p1 = input('insertText', 'a');
+    const p2 = input('insertText', 'b');
+    const p3 = input('insertText', 'c');
+    assert.strictEqual(texts()[1].slice(0, 3), 'abc',
+      'all local keystrokes render before the delayed server acknowledgement');
+    assert.strictEqual(w.__editor.state.rev, 0,
+      'optimistic edits do not wait for the server revision');
+    await Promise.all([p1, p2, p3]);
     assert.strictEqual(texts()[1].slice(0, 3), 'abc');
-    assert.strictEqual(w.__editor.state.rev, 3);
+    assert.strictEqual(w.__editor.state.rev, 2,
+      'the first request and the queued suffix are acknowledged as two batches');
     let [typingNode, typingOffset] = caret();
     assert.strictEqual(typingNode.data.slice(0, typingOffset), 'abc',
       'caret must advance to the end of each accepted insertion');
