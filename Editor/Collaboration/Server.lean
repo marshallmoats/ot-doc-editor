@@ -99,9 +99,15 @@ def collaborationServerSmoke : CollaborationServer := by
   have ha : ValidSeq alice initialDoc := by decide
   have hb : ValidSeq bob initialDoc := by decide
   let (s1, _) := s0.submit 0 alice (by decide) ha
-  let (s2, _) := s1.submit 0 bob (by decide) hb
+  have hbase1 : 0 ≤ s1.revision := by
+    simp [CollaborationServer.revision, CollaborationServer.submit,
+      CollaborationServer.init, Server.submit]
+  have hb1 : ValidSeq bob (s1.srv.docAt 0) := by
+    change ValidSeq bob initialDoc
+    exact hb
+  let (s2, _) := s1.submit 0 bob hbase1 hb1
   exact s2
 
 #eval (collaborationServerSmoke.revision,
   String.intercalate "\\n\\n"
-    (collaborationServerSmoke.srv.doc.map fun b => String.mk b.text))
+    (collaborationServerSmoke.srv.doc.map fun b => String.ofList b.text))
