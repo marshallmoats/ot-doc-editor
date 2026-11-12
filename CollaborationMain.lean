@@ -95,9 +95,15 @@ def collabChangeJson (revision : Nat) (edit : BOps) (receipt : String × String)
     ("edit", Json.arr (edit.map collabOpJson).toArray)
   ]
 
+def collabChangesAux : Nat → List BOps → List (String × String) → Array Json
+  | _, [], _ => #[]
+  | revision, edit :: edits, receipt :: receipts =>
+      #[collabChangeJson (revision + 1) edit receipt] ++
+        collabChangesAux (revision + 1) edits receipts
+  | _, _, _ => #[]
+
 def collabChangesJson (s : CollaborationServer) (since : Nat) : Json :=
-  Json.arr ((s.srv.log.drop since).zip (s.receipts.drop since) |>.mapIdx
-    (fun i pair => collabChangeJson (since + i + 1) pair.1 pair.2)).toArray
+  Json.arr (collabChangesAux since (s.srv.log.drop since) (s.receipts.drop since))
 
 def collabStateChangesJson (s : CollaborationServer) (since : Nat) : Json :=
   Json.mkObj [
