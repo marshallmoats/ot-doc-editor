@@ -1,57 +1,65 @@
-# Browser/WebAssembly demo
+# Browser clients and live collaboration
+
+## WebAssembly demo
 
 The browser entry point is `BrowserMain.lean`. It runs the shared Lean editor
 model in WebAssembly; the browser does not reimplement the OT/document logic in
 JavaScript.
-
-## Run the demo
-
-Prerequisites: Node.js 24+, npm, and the Lean toolchain pinned in
-`lean-toolchain`.
-
-From the repository root:
 
 ```sh
 npm install
 npm run wasm:dev
 ```
 
-Open the local URL printed by Lasm in your browser. The demo has two parts:
+This page demonstrates local editing and a deterministic two-client replay
+inside the Lean/WebAssembly build. The replay is not a network session.
 
-1. **Interactive editor:** append an edit, then undo and redo it. These actions
-   execute the shared Lean `Session` and its validity checks in WebAssembly.
-2. **Collaboration replay:** a deterministic Lean smoke scenario submits two
-   edits from different clients against revision zero. The revisioned server
-   transforms the stale second edit and displays the resulting revision-two
-   document.
+## Live shared-room demo
 
-For a production bundle build:
+The live shared-room browser UI is served by `web/server.py`. Its Python
+bridge routes HTTP requests to one long-lived Lean collaboration process per
+room. The Lean process owns the authoritative revision log and accepts edits
+through `CollaborationServer.accept`.
 
 ```sh
-npm run wasm:build
+lake build
+python3 web/server.py
 ```
 
-The GitHub Actions workflow builds both the Lean project and the browser
-WebAssembly target on pushes and pull requests.
+Open `http://127.0.0.1:8000/?room=demo` in two browser tabs. Edit in either
+tab; the other tab polls the room snapshot and updates automatically. The
+**Copy invite link** button copies the URL for the current room. Use another
+room name in the query string to create an independent room, for example
+`?room=review`.
 
-## Collaboration architecture and current boundary
+For a trusted local network demo, bind to all interfaces:
 
-`Editor/Collaboration.lean` provides a proof-carrying optimistic client state:
+```sh
+OT_HOST=0.0.0.0 python3 web/server.py
+```
 
-- a confirmed server document and revision;
-- a pending local operation queue and optimistic document;
-- remote operation rebasing using the verified `xformSeq` transformation;
-- undo and redo history rebasing, with `ValidChain` proofs maintained;
-- acknowledgement of a prefix of the pending queue without losing subsequent local edits.
+Then share the host computer's LAN address and room URL. This server is
+unauthenticated and unencrypted: do not expose it to the public internet.
 
-`Editor/Collaboration/Server.lean` adds a transport-independent, revisioned
-server boundary. It accepts edits against historical snapshots, transforms
-them over intervening server log entries, preserves the server replay-validity
-proof, and returns receipts carrying client/request identity and the new
-revision.
+## Request and consistency model
 
-**Important:** the collaboration replay in the browser is deterministic and
-runs locally; it is not a live multi-user session. HTTP/WebSocket transport,
-authentication, request de-duplication, persistence, remote delivery, remote
-cursors, and two-browser convergence tests are still future work. Do not
-present this milestone as a production-ready multi-user editor.
+- Each browser tab has a client ID and sends a unique request ID per edit.
+- Each edit includes the revision and document coordinates on which it was
+  composed.
+- The Lean room process reconstructs the edit against that historical
+  snapshot, checks `ValidSeq`, and submits it through the verified revisioned
+  server. Stale edits are transformed over intervening accepted edits.
+- The server serializes accepted requests into a single monotonically
+  increasing revision sequence. Browser tabs poll for newer snapshots.
+- The Python adapter caches successful request receipts to make a repeated
+  request ID idempotent for the lifetime of that room process.
+
+## Current demo boundaries
+
+Rooms, the revision log, and the adapter's request cache live in memory and
+are lost on restart. Shared undo/redo, presence, remote cursors, authentication,
+authorization, durable persistence, and TLS are not implemented. Room names
+are identifiers, not access controls. The live shared-room UI is the existing
+native browser page; the WebAssembly page remains a separate deterministic
+proof-of-concept. CI exercises two independent stale-base submissions against
+the real Lean room executable and checks that both edits survive at revision 2.
