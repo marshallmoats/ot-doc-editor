@@ -13,6 +13,12 @@ const assert = require('assert');
 const PORT = 8770 + Math.floor(Math.random() * 100);
 const base = `http://127.0.0.1:${PORT}`;
 const sleep = ms => new Promise(r => setTimeout(r, ms));
+const waitIdle = async (win, label) => Promise.race([
+  win.__editor.whenIdle(),
+  sleep(15000).then(() => { throw new Error(label + " timed out: " +
+    JSON.stringify({state: win.__editor.state, collab: win.document.getElementById('collab-status').textContent,
+      status: win.document.getElementById('status').textContent})); }),
+]);
 
 async function main() {
   const server = spawn('python3', [path.join(__dirname, 'server.py'), String(PORT)], { stdio: 'ignore', env: { ...process.env, OT_COLLAB_DELAY_MS: "300" } });
@@ -24,7 +30,7 @@ async function main() {
     });
     const w = dom.window, d = w.document;
     const ed = d.getElementById('editor');
-    await sleep(300); await w.__editor.whenIdle();
+    await sleep(300); await waitIdle(w, 'initial editor');
 
     const texts = () => [...ed.children].map(c => c.textContent);
     const kinds = () => [...ed.children].map(c => c.className.replace('block k-', ''));
@@ -43,7 +49,7 @@ async function main() {
       Object.assign(ev, extra);
       ed.dispatchEvent(ev);
       assert(ev.defaultPrevented, 'beforeinput must be intercepted: ' + inputType);
-      await w.__editor.whenIdle();
+      await waitIdle(w, 'editor operation');
     };
     const key = async (k, mods = {}) => {
       ed.dispatchEvent(new w.KeyboardEvent('keydown', { key: k, bubbles: true, cancelable: true, ...mods }));
@@ -145,7 +151,7 @@ async function main() {
     };
     assert(typeAtStart(w1, 'A').startsWith('A'));
     assert(typeAtStart(w2, 'B').startsWith('B'));
-    await Promise.all([w1.__editor.whenIdle(), w2.__editor.whenIdle()]);
+    await Promise.all([waitIdle(w1, 'client one'), waitIdle(w2, 'client two')]);
     await sleep(450); // allow the peer polling cycle to integrate the final revision
     const authoritative = await (await fetch(base + '/collab?room=ot-race')).json();
     assert(authoritative.ok);
