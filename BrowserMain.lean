@@ -1,4 +1,4 @@
-/-!
+/-
 # Browser/WebAssembly demonstration
 
 The interactive panel uses the shared Lean editor session for local edits,
