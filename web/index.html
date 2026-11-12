@@ -97,23 +97,16 @@ document.getElementById('room-name').textContent = roomName;
 let state = { doc: [], rev: 0, canUndo: false, canRedo: false, pendingOps: [], pendingCount: 0 };
 let bridgePortQueue = Promise.resolve();
 let bridgeSnapshotWaiters = [];
-let bridgeSnapshotSeq = 0;
 
 // A port send acknowledges delivery to Lean, not necessarily delivery of the
 // resulting snapshot back to this JS transport. Serialize commands and wait
 // for that snapshot before reading the mirrored revision or sending the next
 // state-dependent command.
-function sendLeanAndWait(bridge, portName, payload) {
+function sendLeanAndWait(bridge, portName, payload, matches = () => true) {
   const task = bridgePortQueue.then(() => new Promise((resolve, reject) => {
-    const before = bridgeSnapshotSeq;
-    const waiter = { resolve, reject };
+    const waiter = { resolve, reject, matches };
     bridgeSnapshotWaiters.push(waiter);
-    Promise.resolve(bridge.ports[portName].send(payload)).then(() => {
-      if (bridgeSnapshotSeq > before) {
-        bridgeSnapshotWaiters = bridgeSnapshotWaiters.filter(w => w !== waiter);
-        resolve();
-      }
-    }).catch(error => {
+    Promise.resolve(bridge.ports[portName].send(payload)).catch(error => {
       bridgeSnapshotWaiters = bridgeSnapshotWaiters.filter(w => w !== waiter);
       reject(error);
     });
@@ -257,7 +250,8 @@ async function apply(resp, keep) {
   if (!resp.ok) { showError(resp.error || 'request failed'); render(); setCaret(keep); return; }
   if (window.__leanBridgeReady) {
     const bridge = await window.__leanBridgeReady;
-    if (resp.changes && resp.changes.length) await sendLeanAndWait(bridge, 'remote', resp.changes);
+    if (resp.changes && resp.changes.length) await sendLeanAndWait(bridge, 'remote', resp.changes,
+      snapshot => snapshot.rev >= state.rev + resp.changes.length);
     state.canUndo = !!resp.canUndo;
     state.canRedo = !!resp.canRedo;
     render();
@@ -281,7 +275,8 @@ async function replace(from, to, text) {
   if (window.__leanBridgeReady) {
     failedFlush = false;
     const bridge = await window.__leanBridgeReady;
-    await sendLeanAndWait(bridge, 'intent', { cmd: 'replace', from, to, text });
+    await sendLeanAndWait(bridge, 'intent', { cmd: 'replace', from, to, text },
+      snapshot => snapshot.pendingCount >= state.pendingCount);
     // beforeinput is cancelled, so the browser never advances its native caret.
     setCaret(text ? caretAfterInsert(from, text) : from);
     return;
@@ -347,7 +342,8 @@ async function perform(it) {
       if (window.__leanBridgeReady) {
         failedFlush = false;
         const bridge = await window.__leanBridgeReady;
-        await sendLeanAndWait(bridge, 'intent', { cmd: 'setKind', block: from.block, kind: it.kind });
+        await sendLeanAndWait(bridge, 'intent', { cmd: 'setKind', block: from.block, kind: it.kind },
+          snapshot => snapshot.pendingCount > state.pendingCount);
         setCaret(from);
         return;
       }
@@ -446,10 +442,12 @@ window.__editorBridgeSnapshot = raw => {
   state = { ...next, canUndo: state.canUndo, canRedo: state.canRedo };
   render();
   if (focused) setCaret(caret);
-  bridgeSnapshotSeq++;
-  const waiters = bridgeSnapshotWaiters;
-  bridgeSnapshotWaiters = [];
-  waiters.forEach(waiter => waiter.resolve(next));
+  const remainingWaiters = [];
+  for (const waiter of bridgeSnapshotWaiters) {
+    if (waiter.matches(next)) waiter.resolve(next);
+    else remainingWaiters.push(waiter);
+  }
+  bridgeSnapshotWaiters = remainingWaiters;
   if (roomReady && state.pendingOps && state.pendingOps.length && !networkBusy && !failedFlush) {
     void flushPending();
   }
@@ -480,7 +478,8 @@ async function flushPending() {
       const latest = await api({ cmd: 'state' });
       if (latest.ok && latest.rev > state.rev && latest.changes && latest.changes.length) {
         const bridge = await window.__leanBridgeReady;
-        await sendLeanAndWait(bridge, 'remote', latest.changes);
+        await sendLeanAndWait(bridge, 'remote', latest.changes,
+          snapshot => snapshot.rev >= latest.rev);
         state.canUndo = !!latest.canUndo;
         state.canRedo = !!latest.canRedo;
         render();
@@ -493,11 +492,14 @@ async function flushPending() {
       }
     } else {
       const bridge = await window.__leanBridgeReady;
-      if (resp.changes && resp.changes.length) await bridge.ports.remote.send(resp.changes);
+      if (resp.changes && resp.changes.length) await sendLeanAndWait(bridge, 'remote', resp.changes,
+         snapshot => snapshot.rev >= state.rev + resp.changes.length);
+      const pendingAfterAck = state.pendingCount - resp.acceptedEdit.length;
       await sendLeanAndWait(bridge, 'ack', {
         acceptedEdit: resp.acceptedEdit,
         acceptedRevision: resp.acceptedRevision
-      });
+      }, snapshot => snapshot.rev >= resp.acceptedRevision &&
+        snapshot.pendingCount === pendingAfterAck);
       if (state.rev !== resp.acceptedRevision) {
         failedFlush = true;
         showError('Lean client could not confirm the accepted batch');
@@ -523,10 +525,12 @@ async function flushPending() {
 if (window.__leanBridgeReady) {
   window.__leanBridgeReady.then(async bridge => {
     editorContent = document.getElementById('editor-content');
-    await sendLeanAndWait(bridge, 'snapshot-request', 'ready');
+    await sendLeanAndWait(bridge, 'snapshot-request', 'ready',
+      snapshot => snapshot.rev === state.rev);
     const r = await api({ cmd: 'state' });
     if (!r.ok) throw new Error(r.error || 'cannot load room state');
-    if (r.changes && r.changes.length) await sendLeanAndWait(bridge, 'remote', r.changes);
+    if (r.changes && r.changes.length) await sendLeanAndWait(bridge, 'remote', r.changes,
+        snapshot => snapshot.rev >= r.rev);
     state.canUndo = !!r.canUndo;
     state.canRedo = !!r.canRedo;
     roomReady = true;
@@ -558,7 +562,8 @@ setInterval(async () => {
       const caret = focused ? currentRange().to : lastPos;
       if (window.__leanBridgeReady) {
         const bridge = await window.__leanBridgeReady;
-        await sendLeanAndWait(bridge, 'remote', remote.changes || []);
+        await sendLeanAndWait(bridge, 'remote', remote.changes || [],
+          snapshot => snapshot.rev >= remote.rev);
         state.canUndo = !!remote.canUndo;
         state.canRedo = !!remote.canRedo;
       } else {
