@@ -63,6 +63,36 @@ are rejected rather than corrupting the document.
 
 ## Current limitations
 
-The collaborative state machine and revisioned server boundary are Lean core
-milestones. A network transport, live multi-client browser UI, remote cursors,
-persistence, and end-to-end browser convergence tests remain to be implemented.
+## Live browser collaboration (demo server)
+
+The native browser editor at `web/index.html` can now join an in-memory shared
+room. The Python HTTP bridge provides room routing and polling; each room owns
+a long-lived `ot-collab` Lean process. Every edit is rebuilt against the
+client's declared base revision and accepted by `CollaborationServer`, which
+performs the authoritative stale-base transformation and validity check.
+
+```sh
+lake build
+python3 web/server.py
+```
+
+Open `http://127.0.0.1:8000/?room=demo` in two separate browser tabs. Edits
+made in either tab are serialized by the same room server and appear in the
+other tab. Use **Copy invite link** to share the room URL. To let another
+computer on your trusted LAN connect, start the server with
+`OT_HOST=0.0.0.0 python3 web/server.py` and share the host machine's LAN
+address. Do not expose this unauthenticated demo server to the public internet.
+
+The `npm run wasm:dev` page remains the self-contained WebAssembly/Lean demo;
+its collaboration panel is still a deterministic local replay. The live-room
+transport is currently provided by the native browser page and Lean server
+process, not by WebAssembly.
+
+## Demo limitations
+
+Rooms and request de-duplication are held in server memory and are lost when
+the process restarts. This demo has no authentication, authorization, TLS,
+durable storage, shared undo/redo, presence, or remote cursors. Room names are
+not access controls. CI runs a real Lean-process integration test in which two
+clients submit edits from revision zero and converge at revision two. Treat
+this as a LAN/demo milestone, not a production multi-tenant service.
