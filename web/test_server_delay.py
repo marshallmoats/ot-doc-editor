@@ -1,8 +1,11 @@
 #!/usr/bin/env python3
 """Check the configurable collaboration delay setting."""
 import os
+import sys
 import unittest
 from unittest.mock import patch
+
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from web.server import configured_collaboration_delay
 
