@@ -477,6 +477,7 @@ inductive Op (α : Type) where
   | nop : Op α
   | ins : Nat → α → Op α
   | del : Nat → α → Op α      -- remembers the deleted element
+  deriving DecidableEq
 
 def Op.apply : Op α → List α → List α
   | .nop,     l => l
@@ -690,10 +691,12 @@ inductive Core (α K : Type) where
   | setK  : K → K → Core α K       -- change kind: old, new
   | split : Nat → K → Core α K     -- split at text offset; new block gets this kind
   | merge : Nat → K → Core α K     -- join with next block; (length of this block, kind of next)
+  deriving DecidableEq
 
 inductive BOp (α K : Type) where
   | nop : BOp α K
   | blk : Nat → Core α K → BOp α K
+  deriving DecidableEq
 
 /-- How many blocks (from the index) an op reads. -/
 def Core.reach : Core α K → Nat
