@@ -22,6 +22,8 @@ jobs:
         run: python3 web/test_server_delay.py
       - name: Test two-client collaboration server
         run: python3 web/test_collaboration.py
+      - name: Test browser transport snapshot synchronization
+        run: node web/test_browser_transport.mjs
 
   browser-wasm:
     runs-on: ubuntu-24.04
