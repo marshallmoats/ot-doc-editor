@@ -97,7 +97,7 @@ function integrate(changes, snapshot) {
   if (!client) return;
   for (const change of changes || []) {
     if (change.revision <= client.revision) continue;
-    const ops=change.edit || [];
+    change = { ...change, edit: (change.edit || []).map(OTClient.decode) };
     const caretFocused=document.activeElement===editor;
     let caret=caretFocused ? currentRange().to : lastPos;
     if (change.clientId===clientId && requestCounts.has(change.requestId)) {
@@ -130,7 +130,7 @@ async function sendPending() {
   let failed=false;
   try {
     const response=await fetch("/collab",{method:"POST",headers:{"Content-Type":"application/json"},
-      body:JSON.stringify({cmd:"submitOps",room:roomName,clientId,requestId,baseRevision:client.revision,ops})}).then(r=>r.json());
+      body:JSON.stringify({cmd:"submitOps",room:roomName,clientId,requestId,baseRevision:client.revision,ops:ops.map(OTClient.encode)})}).then(r=>r.json());
     if(!response.ok) throw new Error(response.error||"collaboration request failed");
     integrate(response.changes||[],response);
   } catch(e) { failed=true; showError(String(e)); }
