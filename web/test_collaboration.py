@@ -65,7 +65,22 @@ def main():
         final = call({"cmd": "state"})
         assert final["rev"] == 2
         assert final["doc"] == bob["doc"]
-        print("collaboration integration: two stale-base clients converged at revision 2")
+        assert final["canUndo"] is True
+        assert final["canRedo"] is False
+
+        undone = call({"cmd": "undo"})
+        assert undone["rev"] == 3
+        assert undone["doc"][0]["text"] == final["doc"][0]["text"]
+        assert undone["doc"][2]["text"] == initial["doc"][2]["text"]
+        assert undone["canUndo"] is True
+        assert undone["canRedo"] is True
+
+        redone = call({"cmd": "redo"})
+        assert redone["rev"] == 4
+        assert redone["doc"] == final["doc"]
+        assert redone["canUndo"] is True
+        assert redone["canRedo"] is False
+        print("collaboration integration: stale-base edits, shared undo, and redo passed")
     finally:
         proc.terminate()
         proc.wait(timeout=5)
