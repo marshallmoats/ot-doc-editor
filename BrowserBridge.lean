@@ -16,6 +16,7 @@ inductive BridgeMsg where
   | intent (raw : String)
   | remote (raw : String)
   | acknowledge (raw : String)
+  | snapshotRequest
 
 def bridgeKindName : Kind → String
   | .para => "para"
@@ -192,14 +193,13 @@ def bridgeUpdate : BridgeMsg → ClientState → ClientState × Cmd BridgeMsg
     | none =>
       (c, Cmd.port "error" (.string "Lean rejected the edit intent"))
     | some next =>
-      (next, Cmd.batch [
-        Cmd.port "snapshot" (.string (bridgeSnapshot next)),
-        Cmd.port "submit" (.string raw)
-      ])
+      (next, Cmd.port "snapshot" (.string (bridgeSnapshot next)))
   | .remote raw, c =>
     match bridgeRemote c raw with
     | none => (c, Cmd.port "error" (.string "Malformed or invalid remote change batch"))
     | some next => (next, Cmd.port "snapshot" (.string (bridgeSnapshot next)))
+  | .snapshotRequest, c =>
+    (c, Cmd.port "snapshot" (.string (bridgeSnapshot c)))
   | .acknowledge raw, c =>
     match bridgeAckInfo raw with
     | none => (c, Cmd.port "error" (.string "Malformed acknowledgement"))
@@ -219,7 +219,8 @@ def bridgeSubscriptions (_ : ClientState) : Subs BridgeMsg :=
       | _ => none,
     Subs.port "ack" fun
       | .string raw => some (.acknowledge raw)
-      | _ => none
+      | _ => none,
+    Subs.port "snapshot-request" fun _ => some .snapshotRequest
   ]
 
 def bridgeView (_ : ClientState) : Html BridgeMsg :=
