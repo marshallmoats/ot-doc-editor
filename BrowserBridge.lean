@@ -236,7 +236,7 @@ def bridgeApplyLiveInput (c : ClientState) (input : LiveInput) : Option ClientSt
     match input.inputType with
     | "insertText" | "insertFromPaste" | "insertFromDrop" | "insertReplacementText" =>
         some (i, p, j, q, input.data)
-    | "insertParagraph" | "insertLineBreak" => some (i, p, j, q, "\\n")
+    | "insertParagraph" | "insertLineBreak" => some (i, p, j, q, "\n")
     | "deleteContentBackward" | "deleteByCut" =>
         if i != j || p != q then some (i, p, j, q, "")
         else if p > 0 then some (i, p - 1, j, q, "")

@@ -365,8 +365,8 @@ document.addEventListener('beforeinput', e => {
   if (['insertText', 'insertParagraph', 'insertLineBreak', 'insertFromPaste',
        'insertFromDrop', 'insertReplacementText'].includes(e.inputType)) {
     const text = e.inputType === 'insertParagraph' || e.inputType === 'insertLineBreak'
-      ? '\\n' : e.otData.replace(/\\r\\n?/g, '\\n');
-    const lines = text.split('\\n');
+      ? '\n' : e.otData.replace(/\r\n?/g, '\n');
+    const lines = text.split('\n');
     caret = { block: from.block + lines.length - 1,
       offset: lines.length === 1 ? from.offset + cpLen(lines[0]) : cpLen(lines[lines.length - 1]) };
   } else if (e.inputType === 'deleteContentBackward' && cmp(from, to) === 0) {
