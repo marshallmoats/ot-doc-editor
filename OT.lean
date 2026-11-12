@@ -1534,11 +1534,6 @@ def demo : Server (BOp Char Kind) (List (Block Char Kind)) :=
 
 -- A presses Enter inside block 0; B (stale, revision 0) appends "X" to block 1
 -- and turns block 0 into a heading. Then A's split is undone.
-#eval
-  let (s1, _) := demo.submit 0 [.blk 0 (.split 1 .para)]
-  let (s2, _) := s1.submit 0 [.blk 1 (.inl (.ins 2 'X')), .blk 0 (.setK .para .h1)]
-  let s3 := s2.undo 0
-  (render s2.doc, render s3.doc)
 
 
 /-! # Documents with referenced tables: a keyed product of two algebras
