@@ -197,6 +197,29 @@ def acknowledgeAcceptedAt (c : ClientState) (accepted : BOps)
     none
 
 
+/-- A concurrent same-position insertion must produce the same accepted
+operation on the client and server sides of the transform. -/
+example :
+    let c0 := ClientState.init initialDoc
+    let local : BOps := [.blk 0 (.inl (.ins 0 '!'))]
+    let remote : BOps := [.blk 0 (.inl (.ins 0 '?'))]
+    let c1 := c0.applyLocal local (by decide)
+    let c2 := c1.receiveRemote remote (by decide)
+    c2.pending = (xformSeq local remote .right).1 := by
+  decide
+
+/-- The exact server-accepted batch retires the rebased local prefix, leaving
+no pending operations and preserving the converged document. -/
+example :
+    let c0 := ClientState.init initialDoc
+    let local : BOps := [.blk 0 (.inl (.ins 0 '!'))]
+    let remote : BOps := [.blk 0 (.inl (.ins 0 '?'))]
+    let c1 := c0.applyLocal local (by decide)
+    let c2 := c1.receiveRemote remote (by decide)
+    let accepted := (xformSeq local remote .right).1
+    (c2.acknowledgeAcceptedAt accepted 2).map (·.pending.length) = some 0 := by
+  decide
+
 end ClientState
 
 /-! ## Executable smoke scenario
