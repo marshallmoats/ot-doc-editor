@@ -80,7 +80,29 @@ def main():
         assert redone["doc"] == final["doc"]
         assert redone["canUndo"] is True
         assert redone["canRedo"] is False
-        print("collaboration integration: stale-base edits, shared undo, and redo passed")
+
+        # The browser bridge submits operation batches produced by Lean. The
+        # server returns the transformed accepted batch and all intervening
+        # log entries so the Lean client can rebase before acknowledging.
+        batch = [{
+            "tag": "blk", "block": 1,
+            "core": {"op": "ins", "offset": 0, "char": "X"}
+        }]
+        submitted = call({
+            "cmd": "submitOps", "baseRevision": 4,
+            "clientId": "alice", "requestId": "alice-batch-1",
+            "ops": batch
+        })
+        assert submitted["rev"] == 5
+        assert submitted["acceptedRevision"] == 5
+        assert submitted["acceptedCount"] == 1
+        assert submitted["acceptedEdit"] == batch
+        assert submitted["changes"] == []
+        since_four = call({"cmd": "state", "since": 4})
+        assert since_four["changes"] == [batch]
+        assert since_four["doc"] == submitted["doc"]
+
+        print("collaboration integration: stale-base edits, shared undo/redo, and Lean operation batches passed")
     finally:
         proc.terminate()
         proc.wait(timeout=5)
