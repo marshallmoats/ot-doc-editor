@@ -3,15 +3,35 @@
 A single-user web editor (paragraphs, headings, list items, quotes, undo/redo) whose
 core is written and verified in Lean 4. A tiny Python bridge serves the page.
 
-## Run
+## Run the native editor
 
     lake build                 # needs Lean 4.20 (elan reads lean-toolchain); first build compiles the proofs
     python3 web/server.py      # then open http://127.0.0.1:8000
 
-## Test
+## Test the native editor
 
     python3 web/test_backend.py 60                 # randomized: backend vs. reference model, full undo/redo
     npm install jsdom && node web/test_frontend.js # real page + real backend under jsdom
+
+## Browser/WebAssembly client (experimental)
+
+The `feat/lean-wasm-browser-client` branch adds a first browser proof of
+concept. It runs the existing Lean `Session` and OT edit/undo/redo logic in
+WebAssembly via [Lasm](https://github.com/Millillion/lasm), rather than
+reimplementing OT in JavaScript.
+
+Requirements: Node.js 24+ and npm.
+
+```sh
+npm install
+npm run wasm:dev
+# open http://127.0.0.1:5173
+npm run wasm:build
+```
+
+See [docs/wasm-client.md](docs/wasm-client.md) for the current scope and
+the next extraction/rebase milestones. This is an initial browser execution
+proof, not yet a multi-client collaborative release.
 
 ## Layout
 
