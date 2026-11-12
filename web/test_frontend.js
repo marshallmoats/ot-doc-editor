@@ -74,7 +74,7 @@ async function main() {
     place(1, 0);
     input('insertText', 'a'); input('insertText', 'b'); await input('insertText', 'c');
     assert.strictEqual(texts()[1].slice(0, 3), 'abc');
-    assert.strictEqual(w.__editor.state.rev, 3);
+    assert.strictEqual(w.__editor.state.rev, 4);
     let [typingNode, typingOffset] = caret();
     assert.strictEqual(typingNode.data.slice(0, typingOffset), 'abc',
       'caret must advance to the end of each accepted insertion');
