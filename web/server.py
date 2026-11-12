@@ -6,6 +6,7 @@ Rooms are in-memory demo rooms; the Lean process owns each room's revision log
 and validates/transforms every submitted edit.
 """
 import json
+import mimetypes
 import os
 import re
 import subprocess
@@ -154,9 +155,46 @@ def make_handler(backend, rooms, collab_delay_ms=0):
 
         def do_GET(self):
             parsed = urlsplit(self.path)
+            if parsed.path.startswith("/dist/"):
+                dist_root = os.path.realpath(os.path.join(ROOT, "..", "dist"))
+                relative = parsed.path[len("/dist/"):]
+                target = os.path.realpath(os.path.join(dist_root, relative))
+                if not target.startswith(dist_root + os.sep) or not os.path.isfile(target):
+                    return self._send(404, "not found", "text/plain")
+                content_type = "application/wasm" if target.endswith(".wasm") else (
+                    mimetypes.guess_type(target)[0] or "application/octet-stream")
+                with open(target, "rb") as f:
+                    return self._send(200, f.read(), content_type)
             if parsed.path in ("/", "/index.html"):
-                with open(os.path.join(ROOT, "index.html"), "rb") as f:
-                    return self._send(200, f.read(), "text/html; charset=utf-8")
+                with open(os.path.join(ROOT, "index.html"), "r", encoding="utf-8") as f:
+                    page = f.read()
+                dist_root = os.path.realpath(os.path.join(ROOT, "..", "dist"))
+                loaders = sorted(
+                    name for name in os.listdir(dist_root)
+                    if name.startswith("app.") and name.endswith(".js")
+                ) if os.path.isdir(dist_root) else []
+                if loaders:
+                    loader = loaders[0]
+                    bootstrap = (
+                        '<script>window.__leanBridgeReady = new Promise((resolve, reject) => { '
+                        'window.__resolveLeanBridge = resolve; window.__rejectLeanBridge = reject; });</script>\n'
+                    )
+                    module = f\'''<script type="module">
+import {{ mount }} from "/dist/{loader}";
+try {{
+  const app = await mount(document.getElementById("lean-client"));
+  window.__resolveLeanBridge(app);
+  app.ports.snapshot.subscribe(raw => window.__editorBridgeSnapshot?.(raw));
+  app.ports.error.subscribe(message => window.__editorBridgeError?.(message));
+  await app.ports["snapshot-request"].send("ready");
+}} catch (error) {{
+  window.__rejectLeanBridge(error);
+  window.__editorBridgeError?.(String(error));
+}}
+</script>\'''
+                    page = page.replace("<script>\n(() => {", bootstrap + "<script>\n(() => {")
+                    page = page.replace("</body>", module + "\n</body>")
+                return self._send(200, page, "text/html; charset=utf-8")
             if parsed.path == "/collab":
                 room_name = parse_qs(parsed.query).get("room", ["demo"])[0]
                 try:
