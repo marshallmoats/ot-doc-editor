@@ -27,7 +27,6 @@ def built_executable(name, env_name):
     candidates = [os.path.join(BUILD, name), os.path.join(BUILD, name + ".exe")]
     return next((path for path in candidates if os.path.exists(path)), candidates[0])
 
-EXE = built_executable("ot-editor", "OT_EXE")
 COLLAB_EXE = built_executable("ot-collab", "OT_COLLAB_EXE")
 MAX_BODY = 1 << 20
 ROOM_RE = re.compile(r"^[A-Za-z0-9_-]{1,64}$")
@@ -74,10 +73,6 @@ class JsonLineProcess:
             return json.loads(out)
         except json.JSONDecodeError:
             return {"ok": False, "error": "invalid response from Lean backend"}
-
-
-class Backend(JsonLineProcess):
-    """Legacy single-user editor process."""
 
 
 class CollaborationRoom(JsonLineProcess):
@@ -129,7 +124,7 @@ class Rooms:
             return room
 
 
-def make_handler(backend, rooms, collab_delay_ms=0):
+def make_handler(rooms, collab_delay_ms=0):
     class Handler(BaseHTTPRequestHandler):
         def _send(self, code, body, ctype):
             data = body if isinstance(body, bytes) else body.encode("utf-8")
@@ -210,14 +205,12 @@ try {{
 
         def do_POST(self):
             parsed = urlsplit(self.path)
-            if parsed.path not in ("/api", "/collab"):
+            if parsed.path != "/collab":
                 return self._send(404, "not found", "text/plain")
             try:
                 msg = self._read_json()
             except Exception as e:
                 return self._json(400, {"ok": False, "error": str(e)})
-            if parsed.path == "/api":
-                return self._json(200, backend.call(msg))
             room_name = msg.pop("room", "demo")
             try:
                 room = rooms.get(room_name)
@@ -238,15 +231,13 @@ try {{
 
 
 def main():
-    if not os.path.exists(EXE):
-        sys.exit(f"backend not found at {EXE}\nbuild it first with `lake build`")
     if not os.path.exists(COLLAB_EXE):
         sys.exit(f"collaboration backend not found at {COLLAB_EXE}\nbuild it first with `lake build`")
     port = int(sys.argv[1]) if len(sys.argv) > 1 else 8000
     host = os.environ.get("OT_HOST", "127.0.0.1")
     delay_ms = configured_collaboration_delay()
     server = ThreadingHTTPServer((host, port),
-                                 make_handler(Backend(EXE), Rooms(COLLAB_EXE), delay_ms))
+                                 make_handler(Rooms(COLLAB_EXE), delay_ms))
     print(f"editor running at http://{host}:{server.server_address[1]}  (collaboration delay: {delay_ms} ms; Ctrl+C to stop)")
     try:
         server.serve_forever()
