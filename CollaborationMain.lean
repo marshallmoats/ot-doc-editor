@@ -132,8 +132,8 @@ def collabHandle (s : CollaborationServer) (line : String) :
                 ("acceptedRevision", toJson receipt.revision),
                 ("doc", collabDocJson receipt.document),
                 ("rev", toJson receipt.revision),
-                ("canUndo", Json.bool false),
-                ("canRedo", Json.bool false),
+                ("canUndo", Json.bool (!next.undoHistory.isEmpty)),
+                ("canRedo", Json.bool (!next.redoHistory.isEmpty)),
                 ("cursor", Json.null)
               ]
               (response, next)
