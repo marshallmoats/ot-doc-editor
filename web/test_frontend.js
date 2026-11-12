@@ -150,12 +150,16 @@ async function main() {
       return ed2.children[1].textContent;
     };
     assert(typeAtStart(w1, 'A').startsWith('A'));
+    assert(typeAtStart(w1, '1').startsWith('1A'),
+      'a second local edit is queued while the first request is unacknowledged');
     assert(typeAtStart(w2, 'B').startsWith('B'));
+    assert(typeAtStart(w2, '2').startsWith('2B'),
+      'the peer also keeps multiple local operations pending');
     await Promise.all([waitIdle(w1, 'client one'), waitIdle(w2, 'client two')]);
     await sleep(450); // allow the peer polling cycle to integrate the final revision
     const authoritative = await (await fetch(base + '/collab?room=ot-race')).json();
     assert(authoritative.ok);
-    assert(authoritative.doc[1].text.includes('A') && authoritative.doc[1].text.includes('B'),
+    assert(['A', '1', 'B', '2'].every(ch => authoritative.doc[1].text.includes(ch)),
       'server retains both concurrent edits');
     assert.strictEqual(JSON.stringify(w1.__editor.state.doc), JSON.stringify(authoritative.doc));
     assert.strictEqual(JSON.stringify(w2.__editor.state.doc), JSON.stringify(authoritative.doc));
