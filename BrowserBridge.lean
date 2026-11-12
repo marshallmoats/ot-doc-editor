@@ -1,22 +1,22 @@
 /-
 # Lean client bridge for the production contenteditable editor
 
-The DOM editor sends edit intents over the Lasm port. This module constructs,
-validates, applies, rebases, and acknowledges document operations. The browser
-shell is responsible only for DOM/selection/IME and HTTP transport.
+The DOM editor sends edit intents over Lasm ports. This module constructs,
+validates, applies, rebases, and acknowledges document operations. JavaScript
+is responsible only for DOM/selection/IME, rendering, and HTTP transport.
 -/
 
 import Editor.Collaboration.Server
-import Lean.Data.Json
 import Lasm.UI
 
 open OT
 open Lasm.UI
+open Lasm.JS
 
 inductive BridgeMsg where
-  | intent (raw : String)
-  | remote (raw : String)
-  | acknowledge (raw : String)
+  | intent (data : Data)
+  | remote (data : Data)
+  | acknowledge (data : Data)
   | snapshotRequest
 
 def bridgeKindName : Kind → String
@@ -26,57 +26,66 @@ def bridgeKindName : Kind → String
   | .item => "item"
   | .quote => "quote"
 
-def bridgeCoreJson : Core Char Kind → Json
-  | .inl .nop => Json.mkObj [("op", Json.str "nop")]
-  | .inl (.ins p ch) => Json.mkObj [
-      ("op", Json.str "ins"), ("offset", toJson p),
-      ("char", Json.str (String.singleton ch))]
-  | .inl (.del p ch) => Json.mkObj [
-      ("op", Json.str "del"), ("offset", toJson p),
-      ("char", Json.str (String.singleton ch))]
-  | .setK old next => Json.mkObj [
-      ("op", Json.str "setKind"), ("old", Json.str (bridgeKindName old)),
-      ("kind", Json.str (bridgeKindName next))]
-  | .split p kind => Json.mkObj [
-      ("op", Json.str "split"), ("offset", toJson p),
-      ("kind", Json.str (bridgeKindName kind))]
-  | .merge p kind => Json.mkObj [
-      ("op", Json.str "merge"), ("offset", toJson p),
-      ("kind", Json.str (bridgeKindName kind))]
+def bridgeString? (data : Data) (key : String) : Option String :=
+  match data.field key with
+  | .string value => some value
+  | _ => none
 
-def bridgeBOpJson : BOp Char Kind → Json
-  | .nop => Json.mkObj [("tag", Json.str "nop")]
-  | .blk block core => Json.mkObj [
-      ("tag", Json.str "blk"), ("block", toJson block),
-      ("core", bridgeCoreJson core)]
+def bridgeNat? (data : Data) (key : String) : Option Nat :=
+  match data.field key with
+  | .number value => some value.toUInt64.toNat
+  | _ => none
 
-def bridgeOpsJson (ops : BOps) : Json :=
-  Json.arr (ops.map bridgeBOpJson).toArray
+def bridgeCoreData : Core Char Kind → Data
+  | .inl .nop => .object #[("op", .string "nop")]
+  | .inl (.ins p ch) => .object #[
+      ("op", .string "ins"), ("offset", toJS p),
+      ("char", .string (String.singleton ch))]
+  | .inl (.del p ch) => .object #[
+      ("op", .string "del"), ("offset", toJS p),
+      ("char", .string (String.singleton ch))]
+  | .setK old next => .object #[
+      ("op", .string "setKind"), ("old", .string (bridgeKindName old)),
+      ("kind", .string (bridgeKindName next))]
+  | .split p kind => .object #[
+      ("op", .string "split"), ("offset", toJS p),
+      ("kind", .string (bridgeKindName kind))]
+  | .merge p kind => .object #[
+      ("op", .string "merge"), ("offset", toJS p),
+      ("kind", .string (bridgeKindName kind))]
 
-def bridgeDocJson (d : BDoc) : Json :=
-  Json.arr (d.map fun b =>
-    Json.mkObj [
-      ("kind", Json.str (bridgeKindName b.kind)),
-      ("text", Json.str (String.ofList b.text))
-    ]).toArray
+def bridgeBOpData : BOp Char Kind → Data
+  | .nop => .object #[("tag", .string "nop")]
+  | .blk block core => .object #[
+      ("tag", .string "blk"), ("block", toJS block),
+      ("core", bridgeCoreData core)]
 
-def bridgeSnapshot (c : ClientState) : String :=
-  (Json.mkObj [
-    ("ok", Json.bool true),
-    ("doc", bridgeDocJson c.doc),
-    ("confirmedDoc", bridgeDocJson c.confirmedDoc),
-    ("rev", toJson c.revision),
-    ("pendingCount", toJson c.pending.length),
-    ("pendingOps", bridgeOpsJson c.pending),
-    ("canUndo", Json.bool (!c.undoStack.isEmpty)),
-    ("canRedo", Json.bool (!c.redoStack.isEmpty))
-  ]).compress
+def bridgeOpsData (ops : BOps) : Data :=
+  .array (ops.map bridgeBOpData).toArray
 
-def bridgeParsePos (j : Json) (key : String) :
-    Except String (Nat × Nat) := do
-  let p ← j.getObjVal? key
-  let block ← p.getObjValAs? Nat "block"
-  let offset ← p.getObjValAs? Nat "offset"
+def bridgeDocData (doc : BDoc) : Data :=
+  .array ((doc.map fun block =>
+    .object #[
+      ("kind", .string (bridgeKindName block.kind)),
+      ("text", .string (String.ofList block.text))
+    ] : Data)).toArray
+
+def bridgeSnapshot (c : ClientState) : Data :=
+  .object #[
+    ("ok", .bool true),
+    ("doc", bridgeDocData c.doc),
+    ("confirmedDoc", bridgeDocData c.confirmedDoc),
+    ("rev", toJS c.revision),
+    ("pendingCount", toJS c.pending.length),
+    ("pendingOps", bridgeOpsData c.pending),
+    ("canUndo", .bool (!c.undoStack.isEmpty)),
+    ("canRedo", .bool (!c.redoStack.isEmpty))
+  ]
+
+def bridgeParsePos (data : Data) (key : String) : Option (Nat × Nat) := do
+  let pos := data.field key
+  let block ← bridgeNat? pos "block"
+  let offset ← bridgeNat? pos "offset"
   pure (block, offset)
 
 def bridgeKind? : String → Option Kind
@@ -87,140 +96,122 @@ def bridgeKind? : String → Option Kind
   | "quote" => some .quote
   | _ => none
 
-def bridgeChar? (j : Json) : Option Char := do
-  let s ← (j.getObjValAs? String "char").toOption
-  match s.toList with
+def bridgeChar? (data : Data) : Option Char := do
+  let raw ← bridgeString? data "char"
+  match raw.toList with
   | [ch] => some ch
   | _ => none
 
-def bridgeCore? (j : Json) : Option (Core Char Kind) := do
-  let op ← (j.getObjValAs? String "op").toOption
+def bridgeCore? (data : Data) : Option (Core Char Kind) := do
+  let op ← bridgeString? data "op"
   match op with
   | "nop" => some (.inl .nop)
   | "ins" =>
-    let p ← (j.getObjValAs? Nat "offset").toOption
-    let ch ← bridgeChar? j
-    some (.inl (.ins p ch))
+    let offset ← bridgeNat? data "offset"
+    let ch ← bridgeChar? data
+    some (.inl (.ins offset ch))
   | "del" =>
-    let p ← (j.getObjValAs? Nat "offset").toOption
-    let ch ← bridgeChar? j
-    some (.inl (.del p ch))
+    let offset ← bridgeNat? data "offset"
+    let ch ← bridgeChar? data
+    some (.inl (.del offset ch))
   | "setKind" =>
-    let oldText ← (j.getObjValAs? String "old").toOption
-    let newText ← (j.getObjValAs? String "kind").toOption
+    let oldText ← bridgeString? data "old"
+    let newText ← bridgeString? data "kind"
     let old ← bridgeKind? oldText
     let next ← bridgeKind? newText
     some (.setK old next)
   | "split" =>
-    let p ← (j.getObjValAs? Nat "offset").toOption
-    let kindText ← (j.getObjValAs? String "kind").toOption
+    let offset ← bridgeNat? data "offset"
+    let kindText ← bridgeString? data "kind"
     let kind ← bridgeKind? kindText
-    some (.split p kind)
+    some (.split offset kind)
   | "merge" =>
-    let p ← (j.getObjValAs? Nat "offset").toOption
-    let kindText ← (j.getObjValAs? String "kind").toOption
+    let offset ← bridgeNat? data "offset"
+    let kindText ← bridgeString? data "kind"
     let kind ← bridgeKind? kindText
-    some (.merge p kind)
+    some (.merge offset kind)
   | _ => none
 
-def bridgeBOp? (j : Json) : Option (BOp Char Kind) := do
-  let tag ← (j.getObjValAs? String "tag").toOption
+def bridgeBOp? (data : Data) : Option (BOp Char Kind) := do
+  let tag ← bridgeString? data "tag"
   match tag with
   | "nop" => some .nop
   | "blk" =>
-    let block ← (j.getObjValAs? Nat "block").toOption
-    let coreJson ← (j.getObjVal? "core").toOption
-    let core ← bridgeCore? coreJson
+    let block ← bridgeNat? data "block"
+    let core ← bridgeCore? (data.field "core")
     some (.blk block core)
   | _ => none
 
-def bridgeOps? (j : Json) : Option BOps :=
-  match j with
-  | .arr items => items.toList.mapM bridgeBOp?
+def bridgeOps? (data : Data) : Option BOps :=
+  match data with
+  | .array items => items.toList.mapM bridgeBOp?
   | _ => none
 
-def bridgeChanges? (j : Json) : Option (List BOps) :=
-  match j with
-  | .arr items => items.toList.mapM bridgeOps?
+def bridgeChanges? (data : Data) : Option (List BOps) :=
+  match data with
+  | .array items => items.toList.mapM bridgeOps?
   | _ => none
 
-def bridgeRemote (c : ClientState) (raw : String) : Option ClientState := do
-  let json ← (Json.parse raw).toOption
-  let changes ← bridgeChanges? json
+def bridgeRemote (c : ClientState) (data : Data) : Option ClientState := do
+  let changes ← bridgeChanges? data
   changes.foldlM (fun state ops =>
     if h : ValidSeq ops state.confirmedDoc then
       some (state.receiveRemote ops h)
     else
       none) c
 
-def bridgeIntent (c : ClientState) (raw : String) : Option ClientState :=
-  match Json.parse raw with
-  | .error _ => none
-  | .ok j =>
-    match j.getObjValAs? String "cmd" with
-    | .ok "replace" =>
-      match bridgeParsePos j "from", bridgeParsePos j "to",
-          j.getObjValAs? String "text" with
-      | .ok (i, p), .ok (k, q), .ok txt => c.applyReplace i p k q txt
-      | _, _, _ => none
-    | .ok "setKind" =>
-      match j.getObjValAs? Nat "block", j.getObjValAs? String "kind" with
-      | .ok block, .ok kindText =>
-        match bridgeKind? kindText with
-        | some kind => c.applySetKind block kind
-        | none => none
-      | _, _ => none
-    | _ => none
-
-def bridgeAckInfo (raw : String) : Option (BOps × Nat) :=
-  match Json.parse raw with
-  | .error _ => none
-  | .ok j =>
-    match j.getObjVal? "acceptedEdit",
-        j.getObjValAs? Nat "acceptedRevision" with
-    | .ok acceptedJson, .ok revision =>
-      match bridgeOps? acceptedJson with
-      | some accepted => some (accepted, revision)
+def bridgeIntent (c : ClientState) (data : Data) : Option ClientState :=
+  match bridgeString? data "cmd" with
+  | some "replace" =>
+    match bridgeParsePos data "from", bridgeParsePos data "to",
+        bridgeString? data "text" with
+    | some (i, p), some (k, q), some txt => c.applyReplace i p k q txt
+    | _, _, _ => none
+  | some "setKind" =>
+    match bridgeNat? data "block", bridgeString? data "kind" with
+    | some block, some kindText =>
+      match bridgeKind? kindText with
+      | some kind => c.applySetKind block kind
       | none => none
     | _, _ => none
+  | _ => none
+
+def bridgeAckInfo (data : Data) : Option (BOps × Nat) := do
+  let accepted ← bridgeOps? (data.field "acceptedEdit")
+  let revision ← bridgeNat? data "acceptedRevision"
+  pure (accepted, revision)
 
 def bridgeInit (_ : Unit) : ClientState × Cmd BridgeMsg :=
   let c := ClientState.init initialDoc
-  (c, Cmd.port "snapshot" (.string (bridgeSnapshot c)))
+  (c, Cmd.port "snapshot" (bridgeSnapshot c))
 
 def bridgeUpdate : BridgeMsg → ClientState → ClientState × Cmd BridgeMsg
-  | .intent raw, c =>
-    match bridgeIntent c raw with
+  | .intent data, c =>
+    match bridgeIntent c data with
     | none =>
       (c, Cmd.port "error" (.string "Lean rejected the edit intent"))
     | some next =>
-      (next, Cmd.port "snapshot" (.string (bridgeSnapshot next)))
-  | .remote raw, c =>
-    match bridgeRemote c raw with
+      (next, Cmd.port "snapshot" (bridgeSnapshot next))
+  | .remote data, c =>
+    match bridgeRemote c data with
     | none => (c, Cmd.port "error" (.string "Malformed or invalid remote change batch"))
-    | some next => (next, Cmd.port "snapshot" (.string (bridgeSnapshot next)))
-  | .snapshotRequest, c =>
-    (c, Cmd.port "snapshot" (.string (bridgeSnapshot c)))
-  | .acknowledge raw, c =>
-    match bridgeAckInfo raw with
+    | some next => (next, Cmd.port "snapshot" (bridgeSnapshot next))
+  | .acknowledge data, c =>
+    match bridgeAckInfo data with
     | none => (c, Cmd.port "error" (.string "Malformed acknowledgement"))
     | some (accepted, revision) =>
       match c.acknowledgeAcceptedAt accepted revision with
       | none => (c, Cmd.port "error" (.string "Server acknowledgement does not match the pending prefix"))
       | some next =>
-        (next, Cmd.port "snapshot" (.string (bridgeSnapshot next)))
+        (next, Cmd.port "snapshot" (bridgeSnapshot next))
+  | .snapshotRequest, c =>
+    (c, Cmd.port "snapshot" (bridgeSnapshot c))
 
 def bridgeSubscriptions (_ : ClientState) : Subs BridgeMsg :=
   Subs.batch [
-    Subs.port "intent" fun
-      | .string raw => some (.intent raw)
-      | _ => none,
-    Subs.port "remote" fun
-      | .string raw => some (.remote raw)
-      | _ => none,
-    Subs.port "ack" fun
-      | .string raw => some (.acknowledge raw)
-      | _ => none,
+    Subs.port "intent" fun data => some (.intent data),
+    Subs.port "remote" fun data => some (.remote data),
+    Subs.port "ack" fun data => some (.acknowledge data),
     Subs.port "snapshot-request" fun _ => some .snapshotRequest
   ]
 
