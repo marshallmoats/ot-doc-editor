@@ -163,7 +163,9 @@ def make_handler(backend, rooms, collab_delay_ms=0):
                     room = rooms.get(room_name)
                 except ValueError as e:
                     return self._json(400, {"ok": False, "error": str(e)})
-                return self._json(200, room.call({"cmd": "state"}))
+                since = parse_qs(parsed.query).get("since", [None])[0]
+                request = {"cmd": "state"} if since is None else {"cmd": "changesSince", "since": int(since)}
+                return self._json(200, room.call(request))
             return self._send(404, "not found", "text/plain")
 
         def do_POST(self):
