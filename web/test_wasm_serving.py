@@ -27,7 +27,7 @@ def main():
     assert loaders, "lasm build did not produce an app JavaScript loader"
     assert wasm, "lasm build did not produce a WebAssembly module"
 
-    httpd = ThreadingHTTPServer(("127.0.0.1", 0), make_handler(None, None))
+    httpd = ThreadingHTTPServer(("127.0.0.1", 0), make_handler(None))
     thread = threading.Thread(target=httpd.serve_forever, daemon=True)
     thread.start()
     base = f"http://127.0.0.1:{httpd.server_address[1]}"
