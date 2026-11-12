@@ -215,8 +215,6 @@ def collaborationSmoke : ClientState := by
   have hr : ValidSeq remote initialDoc := by decide
   exact c1.receiveRemote remote hr
 
-#eval (collaborationSmoke.revision, collaborationSmoke.pending.length,
-  String.intercalate "\\n\\n" (collaborationSmoke.doc.map fun b => String.ofList b.text))
 
 /-! ## Browser intent-builder checks
 
