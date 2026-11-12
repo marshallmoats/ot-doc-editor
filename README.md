@@ -80,15 +80,15 @@ browser bridge is `BrowserBridge.lean`, built by `npm run wasm:build`.
 
 ```sh
 lake build
-python3 web/test_backend.py 60
-npm install jsdom && node web/test_frontend.js
+npm install
+npm run wasm:build
+npm install --no-save jsdom
 python3 web/test_server_delay.py
 python3 web/test_collaboration.py
+node web/test_browser_transport.mjs
+node web/test_wasm_bridge.mjs
+python3 web/test_wasm_serving.py
 ```
-
-CI additionally builds the browser/WASM target and verifies that the Python
-server injects the Lasm mount bootstrap and serves the generated JavaScript and
-WASM assets.
 
 ## Layout
 
