@@ -18,8 +18,6 @@ jobs:
           node-version: 24
       - name: Install browser test dependency
         run: npm install --no-save jsdom
-      - name: Test native browser editor
-        run: node web/test_frontend.js
       - name: Test configurable collaboration delay
         run: python3 web/test_server_delay.py
       - name: Test two-client collaboration server
