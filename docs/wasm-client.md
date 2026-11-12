@@ -35,9 +35,9 @@ from any static web host or CDN.
 This is the first compilation and execution milestone, not yet the complete
 collaborative editor. It intentionally imports `Main` so the browser invokes
 the existing Lean implementation instead of duplicating OT logic in
-JavaScript. The next refactor should move the session, edit builders, and
-protocol-independent document functions into an IO-free `Editor.Core`
-module, leaving JSON-lines and process IO in the native server entry point.
+JavaScript. The session, edit builders, and initial document now live in the IO-free
+`Editor.Core` module. The native JSON-lines protocol and process IO remain
+in `Main.lean`, while `BrowserMain.lean` imports the shared core directly.
 
 After that extraction, add a client state with a confirmed server revision,
 optimistic document, and pending local operation queue. Remote operations must
