@@ -254,7 +254,7 @@ async function replace(from, to, text) {
     return;
   }
   const resp = await api({ cmd: 'replace', from, to, text });
-  apply(resp, text ? caretAfterInsert(from, text) : from);
+  await apply(resp, text ? caretAfterInsert(from, text) : from);
 }
 
 function rangeText(from, to) {
