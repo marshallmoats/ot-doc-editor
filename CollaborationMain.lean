@@ -67,6 +67,66 @@ def collabParsePos (j : Json) (key : String) : Except String (Nat × Nat) := do
   let offset ← p.getObjValAs? Nat "offset"
   pure (block, offset)
 
+def collabParseKind : String → Option Kind
+  | "para" => some .para
+  | "h1" => some .h1
+  | "h2" => some .h2
+  | "item" => some .item
+  | "quote" => some .quote
+  | _ => none
+
+def collabParseChar (j : Json) : Except String Char := do
+  let raw ← j.getObjValAs? String "char"
+  match raw.toList with
+  | [ch] => pure ch
+  | _ => throw "expected a single Unicode scalar value"
+
+def collabParseCore (j : Json) : Except String (Core Char Kind) := do
+  let op ← j.getObjValAs? String "op"
+  match op with
+  | "nop" => pure (.inl .nop)
+  | "ins" =>
+    let offset ← j.getObjValAs? Nat "offset"
+    let ch ← collabParseChar j
+    pure (.inl (.ins offset ch))
+  | "del" =>
+    let offset ← j.getObjValAs? Nat "offset"
+    let ch ← collabParseChar j
+    pure (.inl (.del offset ch))
+  | "setKind" =>
+    let oldText ← j.getObjValAs? String "old"
+    let newText ← j.getObjValAs? String "kind"
+    let old ← (collabParseKind oldText).toExcept "unknown previous block kind"
+    let next ← (collabParseKind newText).toExcept "unknown block kind"
+    pure (.setK old next)
+  | "split" =>
+    let offset ← j.getObjValAs? Nat "offset"
+    let kindText ← j.getObjValAs? String "kind"
+    let kind ← (collabParseKind kindText).toExcept "unknown block kind"
+    pure (.split offset kind)
+  | "merge" =>
+    let offset ← j.getObjValAs? Nat "offset"
+    let kindText ← j.getObjValAs? String "kind"
+    let kind ← (collabParseKind kindText).toExcept "unknown block kind"
+    pure (.merge offset kind)
+  | _ => throw "unknown core operation"
+
+def collabParseBOp (j : Json) : Except String (BOp Char Kind) := do
+  let tag ← j.getObjValAs? String "tag"
+  match tag with
+  | "nop" => pure .nop
+  | "blk" =>
+    let block ← j.getObjValAs? Nat "block"
+    let coreJson ← j.getObjVal? "core"
+    let core ← collabParseCore coreJson
+    pure (.blk block core)
+  | _ => throw "unknown block operation"
+
+def collabParseOps (j : Json) : Except String BOps := do
+  match j with
+  | .arr items => items.toList.mapM collabParseBOp
+  | _ => throw "expected an operation array"
+
 /-- One JSON-lines room process. The Lean server is the serialization point:
 each request is built against its declared historical revision and submitted
 through the proof-carrying CollaborationServer API. -/
@@ -90,6 +150,46 @@ def collabHandle (s : CollaborationServer) (line : String) :
       match s.redo with
       | none => (collabError "nothing to redo", s)
       | some next => (collabStateJson next since, next)
+    | .ok "submitOps" =>
+      match j.getObjValAs? Nat "baseRevision",
+          j.getObjValAs? String "clientId",
+          j.getObjValAs? String "requestId",
+          j.getObjVal? "ops" with
+      | .ok base, .ok clientId, .ok requestId, .ok opsJson =>
+        if hbase : base ≤ s.revision then
+          let historicalDoc := s.srv.docAt base
+          match collabParseOps opsJson with
+          | .error e => (collabError e, s)
+          | .ok edit =>
+            if hvalid : ValidSeq edit historicalDoc then
+              let request : SubmitRequest := {
+                clientId := clientId
+                requestId := requestId
+                baseRevision := base
+                edit := edit
+              }
+              let (next, receipt) := s.accept request hbase hvalid
+              let response := Json.mkObj [
+                ("ok", Json.bool true),
+                ("clientId", Json.str receipt.clientId),
+                ("requestId", Json.str receipt.requestId),
+                ("acceptedRevision", toJson receipt.revision),
+                ("acceptedCount", toJson receipt.acceptedEdit.length),
+                  ("acceptedEdit", collabOpsJson receipt.acceptedEdit),
+                ("acceptedEdit", collabOpsJson receipt.acceptedEdit),
+                ("changes", collabChangesJson (s.srv.log.drop base)),
+                ("doc", collabDocJson receipt.document),
+                ("rev", toJson receipt.revision),
+                ("canUndo", Json.bool (!next.undoHistory.isEmpty)),
+                ("canRedo", Json.bool (!next.redoHistory.isEmpty)),
+                ("cursor", Json.null)
+              ]
+              (response, next)
+            else
+              (collabError "operation batch rejected by Lean validity check", s)
+        else
+          (collabError s!"base revision {base} is ahead of server revision {s.revision}", s)
+      | _, _, _, _ => (collabError "bad submitOps arguments", s)
     | .ok "setKind" =>
       match j.getObjValAs? Nat "baseRevision",
           j.getObjValAs? String "clientId",
@@ -127,6 +227,7 @@ def collabHandle (s : CollaborationServer) (line : String) :
                   ("requestId", Json.str receipt.requestId),
                   ("acceptedRevision", toJson receipt.revision),
                   ("acceptedCount", toJson receipt.acceptedEdit.length),
+                  ("acceptedEdit", collabOpsJson receipt.acceptedEdit),
                   ("changes", collabChangesJson (s.srv.log.drop base)),
                   ("doc", collabDocJson receipt.document),
                   ("rev", toJson receipt.revision),
@@ -168,6 +269,7 @@ def collabHandle (s : CollaborationServer) (line : String) :
                 ("requestId", Json.str receipt.requestId),
                 ("acceptedRevision", toJson receipt.revision),
                   ("acceptedCount", toJson receipt.acceptedEdit.length),
+                  ("acceptedEdit", collabOpsJson receipt.acceptedEdit),
                   ("changes", collabChangesJson (s.srv.log.drop base)),
                 ("doc", collabDocJson receipt.document),
                 ("rev", toJson receipt.revision),
