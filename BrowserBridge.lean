@@ -61,13 +61,14 @@ def bridgeIntent (c : ClientState) (raw : String) : Option ClientState :=
       c.applyReplace i p k q txt
     | _, _, _, _ => none
 
-def bridgeAckCount (raw : String) : Option Nat :=
+def bridgeAckInfo (raw : String) : Option (Nat × Nat) :=
   match Json.parse raw with
   | .error _ => none
   | .ok j =>
-    match j.getObjValAs? Nat "acceptedCount" with
-    | .ok n => some n
-    | .error _ => none
+    match j.getObjValAs? Nat "acceptedCount",
+        j.getObjValAs? Nat "acceptedRevision" with
+    | .ok count, .ok revision => some (count, revision)
+    | _, _ => none
 
 def bridgeInit (_ : Unit) : ClientState × Cmd BridgeMsg :=
   let c := ClientState.init initialDoc
@@ -84,10 +85,10 @@ def bridgeUpdate : BridgeMsg → ClientState → ClientState × Cmd BridgeMsg
         Cmd.port "submit" (.string raw)
       ])
   | .acknowledge raw, c =>
-    match bridgeAckCount raw with
+    match bridgeAckInfo raw with
     | none => (c, Cmd.port "error" (.string "Malformed acknowledgement"))
-    | some count =>
-      match c.acknowledgePrefixLength count with
+    | some (count, revision) =>
+      match c.acknowledgePrefixLengthAt count revision with
       | none => (c, Cmd.port "error" (.string "Acknowledgement is not a pending prefix"))
       | some next =>
         (next, Cmd.port "snapshot" (.string (bridgeSnapshot next)))
