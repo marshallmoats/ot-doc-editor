@@ -13,12 +13,12 @@ const assert = require('assert');
 const PORT = 8770 + Math.floor(Math.random() * 100);
 const base = `http://127.0.0.1:${PORT}`;
 const sleep = ms => new Promise(r => setTimeout(r, ms));
-const waitIdle = async (win, label) => Promise.race([
-  win.__editor.whenIdle(),
-  sleep(15000).then(() => { throw new Error(label + " timed out: " +
-    JSON.stringify({state: win.__editor.state, collab: win.document.getElementById('collab-status').textContent,
-      status: win.document.getElementById('status').textContent})); }),
-]);
+const waitIdle = (win, label) => new Promise((resolve, reject) => {
+  const timer=setTimeout(() => reject(new Error(label + " timed out: " +
+    JSON.stringify({state:win.__editor.state,collab:win.document.getElementById('collab-status').textContent,
+      status:win.document.getElementById('status').textContent})),15000);
+  win.__editor.whenIdle().then(value=>{clearTimeout(timer);resolve(value)},error=>{clearTimeout(timer);reject(error)});
+});
 
 async function main() {
   const server = spawn('python3', [path.join(__dirname, 'server.py'), String(PORT)], { stdio: 'ignore', env: { ...process.env, OT_COLLAB_DELAY_MS: "300" } });
