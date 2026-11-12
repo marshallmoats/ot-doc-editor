@@ -395,6 +395,10 @@ window.__editorBridgeSnapshot = raw => {
   const focused = document.activeElement === editor;
   const caret = focused ? currentRange().to : lastPos;
   const next = raw;
+  if (!next || next.ok === false) {
+    showError(next && next.error ? next.error : 'Lean client rejected an update');
+    return;
+  }
   state = { ...next, canUndo: state.canUndo, canRedo: state.canRedo };
   render();
   if (focused) setCaret(caret);
