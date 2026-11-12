@@ -47,6 +47,54 @@ def collabHandle (s : CollaborationServer) (line : String) :
     match j.getObjValAs? String "cmd" with
     | .error _ => (collabError "missing cmd", s)
     | .ok "state" => (collabStateJson s, s)
+    | .ok "setKind" =>
+      match j.getObjValAs? Nat "baseRevision",
+          j.getObjValAs? String "clientId",
+          j.getObjValAs? String "requestId",
+          j.getObjValAs? Nat "block",
+          j.getObjValAs? String "kind" with
+      | .ok base, .ok clientId, .ok requestId, .ok block, .ok kindText =>
+        if hbase : base ≤ s.revision then
+          let historicalDoc := s.srv.docAt base
+          let kind? : Option Kind :=
+            match kindText with
+            | "para" => some .para
+            | "h1" => some .h1
+            | "h2" => some .h2
+            | "item" => some .item
+            | "quote" => some .quote
+            | _ => none
+          match kind? with
+          | none => (collabError "unknown block kind", s)
+          | some kind =>
+            match setKindOps historicalDoc block kind with
+            | none => (collabError "no such block at the requested base revision", s)
+            | some edit =>
+              if hvalid : ValidSeq edit historicalDoc then
+                let request : SubmitRequest := {
+                  clientId := clientId
+                  requestId := requestId
+                  baseRevision := base
+                  edit := edit
+                }
+                let (next, receipt) := s.accept request hbase hvalid
+                let response := Json.mkObj [
+                  ("ok", Json.bool true),
+                  ("clientId", Json.str receipt.clientId),
+                  ("requestId", Json.str receipt.requestId),
+                  ("acceptedRevision", toJson receipt.revision),
+                  ("doc", collabDocJson receipt.document),
+                  ("rev", toJson receipt.revision),
+                  ("canUndo", Json.bool false),
+                  ("canRedo", Json.bool false),
+                  ("cursor", Json.null)
+                ]
+                (response, next)
+              else
+                (collabError "edit rejected by Lean validity check", s)
+        else
+          (collabError s!"base revision {base} is ahead of server revision {s.revision}", s)
+      | _, _, _, _, _ => (collabError "bad setKind arguments", s)
     | .ok "replace" =>
       match j.getObjValAs? Nat "baseRevision",
           j.getObjValAs? String "clientId",
