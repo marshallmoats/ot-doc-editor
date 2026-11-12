@@ -23,7 +23,7 @@ async function main() {
       beforeParse(w) { w.fetch = (u, o) => fetch(base + u, o); },
     });
     const w = dom.window, d = w.document;
-    const ed = d.getElementById('editor');
+    const ed = d.getElementById('editor-content');
     await sleep(300); await w.__editor.whenIdle();
 
     const texts = () => [...ed.children].map(c => c.textContent);
