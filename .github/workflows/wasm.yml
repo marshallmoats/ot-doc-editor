@@ -20,6 +20,8 @@ jobs:
         run: npm install --no-save jsdom
       - name: Test native browser editor
         run: node web/test_frontend.js
+      - name: Test configurable collaboration delay
+        run: python3 web/test_server_delay.py
       - name: Test two-client collaboration server
         run: python3 web/test_collaboration.py
 
