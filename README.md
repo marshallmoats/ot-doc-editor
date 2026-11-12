@@ -42,7 +42,7 @@ and collaboration architecture.
 
 - `OT.lean` — verified OT algebra, TP1 proofs, block operations, server convergence, selective undo.
 - `Editor/Core.lean` — document/session types, proof-carrying undo/redo, and edit builders.
-- `Editor/Collaboration.lean` — optimistic client state, pending local edits, remote rebasing, and acknowledgement.
+- `Editor/Collaboration.lean` — optimistic client state, pending local edits, remote rebasing, and acknowledgement.\n- `Editor/Collaboration/Server.lean` — revisioned server acceptance, stale-base transformation, and client/request receipts.
 - `Main.lean` — native JSON-lines server protocol.
 - `BrowserMain.lean` — experimental browser/WebAssembly UI.
 - `web/` — Python bridge, native UI, and tests.
