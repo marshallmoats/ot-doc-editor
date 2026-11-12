@@ -109,7 +109,10 @@ async function main() {
     // undo/redo through keyboard shortcuts and buttons, all the way back and forward
     const snapshots = [];
     let guard = 0;
-    while (!d.getElementById('undo').disabled && guard++ < 100) await key('z', { ctrlKey: true });
+    while (!d.getElementById('undo').disabled && guard++ < 100) {
+      await key('z', { ctrlKey: true });
+      console.log('undo-step', guard, w.__editor.state.rev, w.__editor.state.canUndo, texts());
+    }
     assert.deepStrictEqual(texts(), original, 'full undo restores the original document');
     assert.deepStrictEqual(kinds(), ['h1', 'para', 'para']);
     assert(d.getElementById('redo').disabled === false);
