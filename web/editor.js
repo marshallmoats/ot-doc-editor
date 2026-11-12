@@ -93,7 +93,7 @@ function mapPos(pos, ops) {
   }
   return p;
 }
-function integrate(changes) {
+function integrate(changes, snapshot) {
   if (!client) return;
   for (const change of changes || []) {
     if (change.revision <= client.revision) continue;
@@ -111,8 +111,8 @@ function integrate(changes) {
     snapshotFromClient(); render(); if(caretFocused)setCaret(caret);
   }
   if (state) {
+    if (snapshot) { state.canUndo=snapshot.canUndo; state.canRedo=snapshot.canRedo; }
     collabStatus.textContent="Connected · revision "+state.rev;
-    state.canUndo = state.canUndo || false; state.canRedo = state.canRedo || false;
   }
   settleIdle();
 }
@@ -128,7 +128,7 @@ async function sendPending() {
     const response=await fetch("/collab",{method:"POST",headers:{"Content-Type":"application/json"},
       body:JSON.stringify({cmd:"submitOps",room:roomName,clientId,requestId,baseRevision:client.revision,ops})}).then(r=>r.json());
     if(!response.ok) throw new Error(response.error||"collaboration request failed");
-    integrate(response.changes||[]);
+    integrate(response.changes||[],response);
   } catch(e) { showError(String(e)); }
   finally {
     if(activeRequest && activeRequest.requestId===requestId) activeRequest=null;
@@ -141,8 +141,9 @@ async function poll() {
     const r=await fetch("/collab?room="+encodeURIComponent(roomName)+"&since="+client.revision,{cache:"no-store"});
     const remote=await r.json();
     if(!remote.ok){collabStatus.textContent="Disconnected";return;}
-    integrate(remote.changes||[]);
+    integrate(remote.changes||[],remote);
     if(state){state.canUndo=remote.canUndo;state.canRedo=remote.canRedo;render();}
+    if(client.pending.length&&!activeRequest)sendPending();
   } catch(_) { collabStatus.textContent="Reconnecting…"; }
 }
 function caretAfterInsert(from,text) {
