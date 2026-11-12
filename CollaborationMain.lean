@@ -175,7 +175,6 @@ def collabHandle (s : CollaborationServer) (line : String) :
                 ("requestId", Json.str receipt.requestId),
                 ("acceptedRevision", toJson receipt.revision),
                 ("acceptedCount", toJson receipt.acceptedEdit.length),
-                  ("acceptedEdit", collabOpsJson receipt.acceptedEdit),
                 ("acceptedEdit", collabOpsJson receipt.acceptedEdit),
                 ("changes", collabChangesJson (s.srv.log.drop base)),
                 ("doc", collabDocJson receipt.document),
