@@ -72,8 +72,8 @@
     <span id="status" role="alert"></span>
   </div>
   <div id="editor" contenteditable="true" spellcheck="false" role="textbox" aria-multiline="true" aria-label="Document"></div>
-  <p class="hint">Edits are validated and transformed by the Lean room server. Changes from other participants appear automatically.
-    Shared undo/redo is not enabled yet; use a new edit to correct a change.</p>
+  <p class="hint">Edits and shared undo/redo are validated by the Lean room server.
+    Use <kbd>Ctrl</kbd>/<kbd>⌘</kbd>+<kbd>Z</kbd> to undo and <kbd>Shift</kbd>+<kbd>Z</kbd> or <kbd>Y</kbd> to redo.</p>
 </div>
 
 <script>
@@ -226,9 +226,18 @@ function apply(resp, keep) {
   setCaret(resp.cursor || keep);
 }
 
+function caretAfterInsert(from, text) {
+  const normalized = text.replace(/\\r\\n?/g, '\\n');
+  const lines = normalized.split('\\n');
+  if (lines.length === 1) return { block: from.block, offset: from.offset + cpLen(lines[0]) };
+  return { block: from.block + lines.length - 1, offset: cpLen(lines[lines.length - 1]) };
+}
+
 async function replace(from, to, text) {
   const resp = await api({ cmd: 'replace', from, to, text });
-  apply(resp, from);
+  // beforeinput is cancelled, so the browser never advances its native caret.
+  // Restore it after the accepted edit, not at the insertion's original start.
+  apply(resp, text ? caretAfterInsert(from, text) : from);
 }
 
 function rangeText(from, to) {
