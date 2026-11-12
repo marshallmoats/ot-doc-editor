@@ -101,9 +101,10 @@ def collaborationServerSmoke : CollaborationServer := by
   let (s1, _) := s0.submit 0 alice (by decide) ha
   have hbase1 : 0 ≤ s1.revision := by
     simp [CollaborationServer.revision]
+  have hinit1 : s1.srv.init = initialDoc := by
+    rfl
   have hb1 : ValidSeq bob (s1.srv.docAt 0) := by
-    change ValidSeq bob initialDoc
-    exact hb
+    simpa [Server.docAt, hinit1] using hb
   let (s2, _) := s1.submit 0 bob hbase1 hb1
   exact s2
 
