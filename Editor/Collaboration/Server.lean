@@ -20,7 +20,6 @@ structure SubmitRequest where
   requestId : String
   baseRevision : Nat
   edit : BOps
-  deriving Repr
 
 /-- Receipt for one edit accepted into the total server order. -/
 structure SubmitReceipt where
@@ -29,7 +28,6 @@ structure SubmitReceipt where
   revision : Nat
   acceptedEdit : BOps
   document : BDoc
-  deriving Repr
 
 /-- A server snapshot together with the proof that its complete log replays. -/
 structure CollaborationServer where
