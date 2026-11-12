@@ -151,6 +151,18 @@ def bridgeOps? (data : Data) : Option BOps :=
   | .array items => items.toList.mapM bridgeBOp?
   | _ => none
 
+def bridgeWireSample : BOps := [
+  .blk 0 (.inl (.ins 2 'X')),
+  .blk 0 (.inl (.del 3 'Y')),
+  .blk 1 (.setK .para .h1),
+  .blk 1 (.split 4 .item),
+  .blk 2 (.merge 5 .quote),
+  .nop
+]
+
+example : bridgeOps? (bridgeOpsData bridgeWireSample) = some bridgeWireSample := by
+  decide
+
 def bridgeChanges? (data : Data) : Option (List BOps) :=
   match data with
   | .array items => items.toList.mapM bridgeOps?
