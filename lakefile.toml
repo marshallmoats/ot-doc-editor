@@ -1,5 +1,5 @@
 name = "ot-editor"
-defaultTargets = ["OT", "Editor", "ot-editor"]
+defaultTargets = ["OT", "Editor", "ot-editor", "ot-collab"]
 
 [[lean_lib]]
 name = "OT"
@@ -10,3 +10,7 @@ name = "Editor"
 [[lean_exe]]
 name = "ot-editor"
 root = "Main"
+
+[[lean_exe]]
+name = "ot-collab"
+root = "CollaborationMain"
