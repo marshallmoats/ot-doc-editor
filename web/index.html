@@ -127,7 +127,7 @@ let lastPos = { block: 0, offset: 0 };
 let networkBusy = false;
 let failedFlush = false;
 let pendingRequest = null;
-let roomReady = false;   // last known caret (focus end), in blocks / code points
+let roomReady = false;   // initial server snapshot has been integrated
 let statusTimer = null;
 
 /* ---- code point helpers: Lean counts Unicode scalar values, JS strings count UTF-16 units ---- */
@@ -477,9 +477,8 @@ async function flushPending() {
 
 if (window.__leanBridgeReady) {
   window.__leanBridgeReady.then(async bridge => {
-    // Lasm mounts its own editor-content root inside #editor. The static
-    // empty element in the HTML is only for the DOM-only fallback, so remove
-    // it here and bind selection/caret handling to the mounted Lean view.
+    // Lasm mounts its editor root inside #editor. Discard the empty HTML
+    // placeholder and bind selection handling to the mounted Lean view.
     const editorRoots = [...editor.children].filter(el => el.id === 'editor-content');
     editorContent = editorRoots[editorRoots.length - 1] || null;
     if (!editorContent) throw new Error('Lean editor root was not mounted');
