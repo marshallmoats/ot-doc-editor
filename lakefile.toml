@@ -1,0 +1,9 @@
+name = "ot-editor"
+defaultTargets = ["ot-editor"]
+
+[[lean_lib]]
+name = "OT"
+
+[[lean_exe]]
+name = "ot-editor"
+root = "Main"

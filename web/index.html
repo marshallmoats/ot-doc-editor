@@ -1,0 +1,344 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Verified OT editor</title>
+<style>
+  :root {
+    --bg: #fafaf8; --surface: #ffffff; --text: #1f2328; --muted: #6b7280;
+    --border: #d9d9d4; --accent: #2457c5; --err: #b42318; --err-bg: #fee4e2;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #17181b; --surface: #1f2125; --text: #e6e6e3; --muted: #9aa0a6;
+      --border: #373a40; --accent: #7aa2f7; --err: #ffb4a9; --err-bg: #4a1f1a;
+    }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text);
+         font: 16px/1.6 system-ui, -apple-system, "Segoe UI", sans-serif; }
+  .wrap { max-width: 780px; margin: 0 auto; padding: 20px 16px 60px; }
+  header { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+  h1.title { font-size: 15px; font-weight: 600; margin: 0; color: var(--muted); letter-spacing: .02em; }
+  #rev { font-size: 13px; color: var(--muted); font-variant-numeric: tabular-nums; }
+  .toolbar { display: flex; gap: 8px; align-items: center; margin: 14px 0 10px; flex-wrap: wrap; }
+  button, select { font: inherit; font-size: 14px; color: var(--text); background: var(--surface);
+                   border: 1px solid var(--border); border-radius: 6px; padding: 5px 12px; cursor: pointer; }
+  button:hover:not(:disabled), select:hover { border-color: var(--accent); }
+  button:disabled { opacity: .45; cursor: default; }
+  button:focus-visible, select:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+  #status { font-size: 13px; padding: 4px 10px; border-radius: 6px; background: var(--err-bg);
+            color: var(--err); display: none; }
+  #editor { background: var(--surface); border: 1px solid var(--border); border-radius: 10px;
+            padding: 22px 26px; min-height: 340px; outline: none; white-space: pre-wrap;
+            overflow-wrap: anywhere; caret-color: var(--accent); }
+  #editor:focus { border-color: var(--accent); }
+  .block { margin: 0 0 .55em; min-height: 1.6em; }
+  .k-h1 { font-size: 1.75em; font-weight: 700; line-height: 1.25; margin-top: .3em; }
+  .k-h2 { font-size: 1.35em; font-weight: 650; line-height: 1.3; margin-top: .2em; }
+  .k-item { position: relative; padding-left: 1.4em; margin-bottom: .2em; }
+  .k-item::before { content: "\2022"; position: absolute; left: .35em; color: var(--muted); }
+  .k-quote { border-left: 3px solid var(--border); padding-left: 1em; color: var(--muted); }
+  .hint { margin-top: 14px; font-size: 13px; color: var(--muted); }
+  kbd { font: 12px ui-monospace, monospace; border: 1px solid var(--border); border-bottom-width: 2px;
+        border-radius: 4px; padding: 0 5px; background: var(--surface); }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1 class="title">VERIFIED OT EDITOR</h1>
+    <span id="rev">rev 0</span>
+  </header>
+  <div class="toolbar">
+    <button id="undo" type="button" disabled>Undo</button>
+    <button id="redo" type="button" disabled>Redo</button>
+    <select id="kind" aria-label="Block type">
+      <option value="para">Paragraph</option>
+      <option value="h1">Heading 1</option>
+      <option value="h2">Heading 2</option>
+      <option value="item">List item</option>
+      <option value="quote">Quote</option>
+    </select>
+    <span id="status" role="alert"></span>
+  </div>
+  <div id="editor" contenteditable="true" spellcheck="false" role="textbox" aria-multiline="true" aria-label="Document"></div>
+  <p class="hint">Every edit is validated by the Lean backend before it is committed.
+    <kbd>Ctrl</kbd>/<kbd>⌘</kbd>+<kbd>Z</kbd> undo, <kbd>Shift</kbd>+<kbd>Z</kbd> or <kbd>Y</kbd> redo.</p>
+</div>
+
+<script>
+(() => {
+'use strict';
+
+const editor = document.getElementById('editor');
+const els = {
+  undo: document.getElementById('undo'), redo: document.getElementById('redo'),
+  kind: document.getElementById('kind'), rev: document.getElementById('rev'),
+  status: document.getElementById('status'),
+};
+
+let state = { doc: [], rev: 0, canUndo: false, canRedo: false };
+let lastPos = { block: 0, offset: 0 };   // last known caret (focus end), in blocks / code points
+let statusTimer = null;
+
+/* ---- code point helpers: Lean counts Unicode scalar values, JS strings count UTF-16 units ---- */
+const cpLen = s => { let n = 0; for (const _ of s) n++; return n; };
+const cpToIdx = (s, cp) => { let i = 0, n = 0; for (const ch of s) { if (n === cp) break; i += ch.length; n++; } return i; };
+const idxToCp = (s, idx) => cpLen(s.slice(0, idx));
+const blockLen = b => (state.doc[b] ? cpLen(state.doc[b].text) : 0);
+const cmp = (a, b) => a.block - b.block || a.offset - b.offset;
+
+/* ---- rendering ---- */
+function blockEl(b, i) {
+  const d = document.createElement('div');
+  d.className = 'block k-' + b.kind;
+  d.dataset.i = String(i);
+  if (b.text === '') d.appendChild(document.createElement('br'));
+  else d.appendChild(document.createTextNode(b.text));
+  return d;
+}
+
+function render() {
+  const frag = document.createDocumentFragment();
+  state.doc.forEach((b, i) => frag.appendChild(blockEl(b, i)));
+  while (editor.firstChild) editor.removeChild(editor.firstChild);
+  editor.appendChild(frag);
+  els.undo.disabled = !state.canUndo;
+  els.redo.disabled = !state.canRedo;
+  els.rev.textContent = 'rev ' + state.rev;
+  syncKind();
+}
+
+function syncKind() {
+  const b = state.doc[lastPos.block];
+  els.kind.value = b ? b.kind : 'para';
+}
+
+function showError(msg) {
+  els.status.textContent = msg;
+  els.status.style.display = 'inline-block';
+  clearTimeout(statusTimer);
+  statusTimer = setTimeout(() => { els.status.style.display = 'none'; }, 4000);
+}
+
+/* ---- selection <-> (block, code point offset) ---- */
+function blockOf(node) {
+  while (node && node !== editor) {
+    if (node.parentNode === editor) return node;
+    node = node.parentNode;
+  }
+  return null;
+}
+
+function domToPos(node, off) {
+  if (!node) return null;
+  if (node === editor) {
+    const n = editor.children.length;
+    if (n === 0) return { block: 0, offset: 0 };
+    if (off >= n) return { block: n - 1, offset: blockLen(n - 1) };
+    return { block: off, offset: 0 };
+  }
+  const b = blockOf(node);
+  if (!b) return null;
+  const i = Number(b.dataset.i);
+  if (node === b) return { block: i, offset: off === 0 ? 0 : blockLen(i) };
+  if (node.nodeType === 3) return { block: i, offset: idxToCp(node.data, off) };
+  return { block: i, offset: 0 };
+}
+
+function currentRange() {
+  const sel = window.getSelection();
+  if (sel && sel.rangeCount && editor.contains(sel.anchorNode)) {
+    const a = domToPos(sel.anchorNode, sel.anchorOffset);
+    const f = domToPos(sel.focusNode, sel.focusOffset);
+    if (a && f) return cmp(a, f) <= 0 ? { from: a, to: f } : { from: f, to: a };
+  }
+  return { from: lastPos, to: lastPos };
+}
+
+function setCaret(pos) {
+  const n = state.doc.length;
+  if (n === 0) return;
+  const b = Math.min(pos.block, n - 1);
+  const o = Math.min(pos.offset, blockLen(b));
+  const el = editor.children[b];
+  const t = el.firstChild;
+  const range = document.createRange();
+  if (t && t.nodeType === 3) range.setStart(t, cpToIdx(t.data, o));
+  else range.setStart(el, 0);
+  range.collapse(true);
+  const sel = window.getSelection();
+  sel.removeAllRanges();
+  sel.addRange(range);
+  lastPos = { block: b, offset: o };
+  syncKind();
+}
+
+document.addEventListener('selectionchange', () => {
+  const sel = window.getSelection();
+  if (sel && sel.rangeCount && editor.contains(sel.focusNode)) {
+    const p = domToPos(sel.focusNode, sel.focusOffset);
+    if (p) { lastPos = p; syncKind(); }
+  }
+});
+
+/* ---- talking to the backend ---- */
+async function api(msg) {
+  const r = await fetch('/api', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(msg),
+  });
+  return r.json();
+}
+
+function apply(resp, keep) {
+  if (!resp.ok) { showError(resp.error || 'request failed'); render(); setCaret(keep); return; }
+  state = resp;
+  render();
+  editor.focus();
+  setCaret(resp.cursor || keep);
+}
+
+async function replace(from, to, text) {
+  const resp = await api({ cmd: 'replace', from, to, text });
+  apply(resp, from);
+}
+
+function rangeText(from, to) {
+  if (from.block === to.block) {
+    const t = state.doc[from.block].text;
+    return [...t].slice(from.offset, to.offset).join('');
+  }
+  const parts = [];
+  for (let b = from.block; b <= to.block; b++) {
+    const cps = [...state.doc[b].text];
+    parts.push(cps.slice(b === from.block ? from.offset : 0, b === to.block ? to.offset : cps.length).join(''));
+  }
+  return parts.join('\n');
+}
+
+function wordBoundary(pos, dir) {
+  const cps = [...state.doc[pos.block].text];
+  let o = pos.offset;
+  if (dir < 0) { while (o > 0 && /\s/.test(cps[o - 1])) o--; while (o > 0 && !/\s/.test(cps[o - 1])) o--; }
+  else { while (o < cps.length && /\s/.test(cps[o])) o++; while (o < cps.length && !/\s/.test(cps[o])) o++; }
+  return { block: pos.block, offset: o };
+}
+
+/* ---- intents: executed strictly in order, each against the up-to-date document ---- */
+async function perform(it) {
+  const { from, to } = currentRange();
+  const collapsed = cmp(from, to) === 0;
+  switch (it.type) {
+    case 'text': return replace(from, to, it.text);
+    case 'compose': return replace(it.from, it.to, it.text);
+    case 'backspace': {
+      if (!collapsed) return replace(from, to, '');
+      if (from.offset > 0) return replace({ block: from.block, offset: from.offset - 1 }, from, '');
+      if (from.block > 0) return replace({ block: from.block - 1, offset: blockLen(from.block - 1) }, from, '');
+      return;
+    }
+    case 'delete': {
+      if (!collapsed) return replace(from, to, '');
+      if (from.offset < blockLen(from.block)) return replace(from, { block: from.block, offset: from.offset + 1 }, '');
+      if (from.block < state.doc.length - 1) return replace(from, { block: from.block + 1, offset: 0 }, '');
+      return;
+    }
+    case 'wordBack': {
+      if (!collapsed) return replace(from, to, '');
+      if (from.offset === 0) return perform({ type: 'backspace' });
+      return replace(wordBoundary(from, -1), from, '');
+    }
+    case 'wordFwd': {
+      if (!collapsed) return replace(from, to, '');
+      if (from.offset === blockLen(from.block)) return perform({ type: 'delete' });
+      return replace(from, wordBoundary(from, 1), '');
+    }
+    case 'cut': return collapsed ? undefined : replace(from, to, '');
+    case 'undo': return apply(await api({ cmd: 'undo' }), from);
+    case 'redo': return apply(await api({ cmd: 'redo' }), from);
+    case 'kind': return apply(await api({ cmd: 'setKind', block: from.block, kind: it.kind }), from);
+  }
+}
+
+const queue = [];
+let running = false;
+let idleWaiters = [];
+
+async function drain() {
+  running = true;
+  while (queue.length) {
+    const it = queue.shift();
+    try { await perform(it); } catch (e) { showError(String(e)); }
+  }
+  running = false;
+  idleWaiters.splice(0).forEach(r => r());
+}
+function enqueue(it) { queue.push(it); if (!running) drain(); }
+
+/* ---- DOM events ---- */
+let composing = null;
+
+editor.addEventListener('compositionstart', () => { composing = currentRange(); });
+editor.addEventListener('compositionend', e => {
+  const c = composing; composing = null;
+  if (c) enqueue({ type: 'compose', from: c.from, to: c.to, text: e.data || '' });
+});
+
+editor.addEventListener('beforeinput', e => {
+  if (e.isComposing || composing) return;   // let the IME work; committed at compositionend
+  e.preventDefault();
+  switch (e.inputType) {
+    case 'insertText': if (e.data) enqueue({ type: 'text', text: e.data }); break;
+    case 'insertParagraph': case 'insertLineBreak': enqueue({ type: 'text', text: '\n' }); break;
+    case 'insertFromPaste': case 'insertFromDrop': case 'insertReplacementText': {
+      const t = e.dataTransfer ? e.dataTransfer.getData('text/plain') : e.data;
+      if (t) enqueue({ type: 'text', text: t });
+      break;
+    }
+    case 'deleteContentBackward': enqueue({ type: 'backspace' }); break;
+    case 'deleteContentForward': enqueue({ type: 'delete' }); break;
+    case 'deleteWordBackward': enqueue({ type: 'wordBack' }); break;
+    case 'deleteWordForward': enqueue({ type: 'wordFwd' }); break;
+    case 'deleteByCut': enqueue({ type: 'cut' }); break;
+    case 'historyUndo': enqueue({ type: 'undo' }); break;
+    case 'historyRedo': enqueue({ type: 'redo' }); break;
+    default: break;   // formatting commands etc. are not supported
+  }
+});
+
+editor.addEventListener('cut', e => {
+  const { from, to } = currentRange();
+  if (cmp(from, to) === 0) return;
+  if (e.clipboardData) e.clipboardData.setData('text/plain', rangeText(from, to));
+  e.preventDefault();
+  enqueue({ type: 'cut' });
+});
+
+editor.addEventListener('keydown', e => {
+  const mod = e.ctrlKey || e.metaKey;
+  const k = (e.key || '').toLowerCase();
+  if (mod && k === 'z') { e.preventDefault(); enqueue({ type: e.shiftKey ? 'redo' : 'undo' }); }
+  else if (mod && k === 'y') { e.preventDefault(); enqueue({ type: 'redo' }); }
+});
+
+/* ---- toolbar ---- */
+for (const b of [els.undo, els.redo]) b.addEventListener('mousedown', e => e.preventDefault());
+els.undo.addEventListener('click', () => enqueue({ type: 'undo' }));
+els.redo.addEventListener('click', () => enqueue({ type: 'redo' }));
+els.kind.addEventListener('change', () => enqueue({ type: 'kind', kind: els.kind.value }));
+
+/* ---- start ---- */
+api({ cmd: 'state' }).then(r => apply(r, { block: 0, offset: 0 }))
+  .catch(() => showError('cannot reach the backend'));
+
+// Test hook (also handy in the console).
+window.__editor = {
+  whenIdle: () => (running || queue.length) ? new Promise(r => idleWaiters.push(r)) : Promise.resolve(),
+  get state() { return state; },
+};
+})();
+</script>
+</body>
+</html>
