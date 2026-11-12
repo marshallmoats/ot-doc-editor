@@ -174,7 +174,7 @@
       if (ch === "\n") {
         out.push(blk(bi, { tag: "split", pos: off, kind: nextKind(kind) }));
         bi++; off = 0; kind = nextKind(kind);
-      } else out.push(inline(bi, { tag: "inl", op: { tag: "ins", pos: off++, char: ch } }));
+      } else out.push(inline(bi, { tag: "ins", pos: off++, char: ch }));
     }
     return out;
   }
