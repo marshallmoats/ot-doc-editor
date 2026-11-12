@@ -131,14 +131,14 @@ async function main() {
 
     // Two browser clients edit the same position concurrently. The client-side
     // pending queue must rebase one edit over the other's accepted operation.
-    const openRoom = async room => JSDOM.fromFile(path.join(__dirname, 'index.html'), {
-      url: base + '/?room=' + room, runScripts: 'dangerously', resources: 'usable',
+    const openRoom = async room => JSDOM.fromURL(base + '/?room=' + room, { runScripts: 'dangerously', resources: 'usable',
       pretendToBeVisual: true,
       beforeParse(win) { win.fetch = (u, o) => fetch(base + u, o); },
     });
     const d1 = await openRoom('ot-race'), d2 = await openRoom('ot-race');
     const w1 = d1.window, w2 = d2.window;
-    for (let i=0;i<30 && (!w1.__editor.state || !w2.__editor.state);i++) await sleep(50);
+    for (let i=0;i<30 && (!w1.__editor?.state || !w2.__editor?.state);i++) await sleep(50);
+    assert(w1.__editor?.state && w2.__editor?.state,'both collaboration clients must finish loading');
     const typeAtStart = (win, ch) => {
       const ed2 = win.document.getElementById('editor');
       const range = win.document.createRange(), text = ed2.children[1].firstChild;
@@ -169,7 +169,8 @@ async function main() {
     // operation wins the server's serialization race.
     const d3 = await openRoom('ot-split-race'), d4 = await openRoom('ot-split-race');
     const w3 = d3.window, w4 = d4.window;
-    for (let i=0;i<30 && (!w3.__editor.state || !w4.__editor.state);i++) await sleep(50);
+    for (let i=0;i<30 && (!w3.__editor?.state || !w4.__editor?.state);i++) await sleep(50);
+    assert(w3.__editor?.state && w4.__editor?.state,'split-race clients must finish loading');
     const ed3=w3.document.getElementById('editor');
     const r3=w3.document.createRange(), t3=ed3.children[1].firstChild;
     r3.setStart(t3,0);r3.collapse(true);w3.getSelection().removeAllRanges();w3.getSelection().addRange(r3);
