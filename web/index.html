@@ -137,23 +137,8 @@ const idxToCp = (s, idx) => cpLen(s.slice(0, idx));
 const blockLen = b => (state.doc[b] ? cpLen(state.doc[b].text) : 0);
 const cmp = (a, b) => a.block - b.block || a.offset - b.offset;
 
-/* ---- rendering ---- */
-function blockEl(b, i) {
-  const d = document.createElement('div');
-  d.className = 'block k-' + b.kind;
-  d.dataset.i = String(i);
-  if (b.text === '') d.appendChild(document.createElement('br'));
-  else d.appendChild(document.createTextNode(b.text));
-  return d;
-}
-
+/* ---- render toolbar state; Lasm owns the document DOM ---- */
 function render() {
-  if (!window.__leanBridgeReady) {
-    const frag = document.createDocumentFragment();
-    state.doc.forEach((b, i) => frag.appendChild(blockEl(b, i)));
-    while (editorContent.firstChild) editorContent.removeChild(editorContent.firstChild);
-    editorContent.appendChild(frag);
-  }
   els.undo.disabled = !state.canUndo || state.pendingCount > 0;
   els.redo.disabled = !state.canRedo || state.pendingCount > 0;
   els.rev.textContent = 'rev ' + state.rev;
@@ -256,17 +241,12 @@ async function api(msg) {
 
 async function apply(resp, keep) {
   if (!resp.ok) { showError(resp.error || 'request failed'); render(); setCaret(keep); return; }
-  if (window.__leanBridgeReady) {
-    const bridge = await window.__leanBridgeReady;
-    if (resp.changes && resp.changes.length) await sendLeanAndWait(bridge, 'remote', resp.changes,
-      snapshot => snapshot.rev >= state.rev + resp.changes.length);
-    state.canUndo = !!resp.canUndo;
-    state.canRedo = !!resp.canRedo;
-    render();
-  } else {
-    state = resp;
-    render();
-  }
+  const bridge = await window.__leanBridgeReady;
+  if (resp.changes && resp.changes.length) await sendLeanAndWait(bridge, 'remote', resp.changes,
+    snapshot => snapshot.rev >= state.rev + resp.changes.length);
+  state.canUndo = !!resp.canUndo;
+  state.canRedo = !!resp.canRedo;
+  render();
   collabStatus.textContent = 'Connected · revision ' + state.rev;
   editorContent.focus();
   setCaret(resp.cursor || keep);
@@ -280,17 +260,12 @@ function caretAfterInsert(from, text) {
 }
 
 async function replace(from, to, text) {
-  if (window.__leanBridgeReady) {
-    failedFlush = false;
-    const bridge = await window.__leanBridgeReady;
-    await sendLeanAndWait(bridge, 'intent', { cmd: 'replace', from, to, text },
-      snapshot => snapshot.pendingCount >= state.pendingCount);
-    // beforeinput is cancelled, so the browser never advances its native caret.
-    setCaret(text ? caretAfterInsert(from, text) : from);
-    return;
-  }
-  const resp = await api({ cmd: 'replace', from, to, text });
-  await apply(resp, text ? caretAfterInsert(from, text) : from);
+  failedFlush = false;
+  const bridge = await window.__leanBridgeReady;
+  await sendLeanAndWait(bridge, 'intent', { cmd: 'replace', from, to, text },
+    snapshot => snapshot.pendingCount >= state.pendingCount);
+  // beforeinput is cancelled, so the browser never advances its native caret.
+  setCaret(text ? caretAfterInsert(from, text) : from);
 }
 
 function rangeText(from, to) {
@@ -306,63 +281,28 @@ function rangeText(from, to) {
   return parts.join('\n');
 }
 
-function wordBoundary(pos, dir) {
-  const cps = [...state.doc[pos.block].text];
-  let o = pos.offset;
-  if (dir < 0) { while (o > 0 && /\s/.test(cps[o - 1])) o--; while (o > 0 && !/\s/.test(cps[o - 1])) o--; }
-  else { while (o < cps.length && /\s/.test(cps[o])) o++; while (o < cps.length && !/\s/.test(cps[o])) o++; }
-  return { block: pos.block, offset: o };
-}
-
-/* ---- intents: executed strictly in order, each against the up-to-date document ---- */
+/* ---- serialized UI actions not handled directly by beforeinput ---- */
 async function perform(it) {
   const { from, to } = currentRange();
-  const collapsed = cmp(from, to) === 0;
   switch (it.type) {
-    case 'text': return replace(from, to, it.text);
     case 'compose': return replace(it.from, it.to, it.text);
-    case 'backspace': {
-      if (!collapsed) return replace(from, to, '');
-      if (from.offset > 0) return replace({ block: from.block, offset: from.offset - 1 }, from, '');
-      if (from.block > 0) return replace({ block: from.block - 1, offset: blockLen(from.block - 1) }, from, '');
-      return;
-    }
-    case 'delete': {
-      if (!collapsed) return replace(from, to, '');
-      if (from.offset < blockLen(from.block)) return replace(from, { block: from.block, offset: from.offset + 1 }, '');
-      if (from.block < state.doc.length - 1) return replace(from, { block: from.block + 1, offset: 0 }, '');
-      return;
-    }
-    case 'wordBack': {
-      if (!collapsed) return replace(from, to, '');
-      if (from.offset === 0) return perform({ type: 'backspace' });
-      return replace(wordBoundary(from, -1), from, '');
-    }
-    case 'wordFwd': {
-      if (!collapsed) return replace(from, to, '');
-      if (from.offset === blockLen(from.block)) return perform({ type: 'delete' });
-      return replace(from, wordBoundary(from, 1), '');
-    }
-    case 'cut': return collapsed ? undefined : replace(from, to, '');
+    case 'cut':
+      return cmp(from, to) === 0 ? undefined : replace(from, to, '');
     case 'undo': return apply(await api({ cmd: 'undo' }), from);
     case 'redo': return apply(await api({ cmd: 'redo' }), from);
     case 'kind': {
-      if (window.__leanBridgeReady) {
-        failedFlush = false;
-        const bridge = await window.__leanBridgeReady;
-        await sendLeanAndWait(bridge, 'intent', { cmd: 'setKind', block: from.block, kind: it.kind },
-          snapshot => snapshot.pendingCount > state.pendingCount);
-        setCaret(from);
-        return;
-      }
-      return apply(await api({ cmd: 'setKind', block: from.block, kind: it.kind }), from);
+      failedFlush = false;
+      const bridge = await window.__leanBridgeReady;
+      await sendLeanAndWait(bridge, 'intent', { cmd: 'setKind', block: from.block, kind: it.kind },
+        snapshot => snapshot.pendingCount > state.pendingCount);
+      setCaret(from);
+      return;
     }
   }
 }
 
 const queue = [];
 let running = false;
-let idleWaiters = [];
 
 async function drain() {
   running = true;
@@ -371,7 +311,6 @@ async function drain() {
     try { await perform(it); } catch (e) { showError(String(e)); }
   }
   running = false;
-  idleWaiters.splice(0).forEach(r => r());
 }
 function enqueue(it) { queue.push(it); if (!running) drain(); }
 
@@ -559,12 +498,16 @@ if (window.__leanBridgeReady) {
     render();
     collabStatus.textContent = 'Connected · revision ' + state.rev;
     if (state.pendingOps && state.pendingOps.length) void flushPending();
-  }).catch(() => showError('cannot start Lean client'));
+  }).catch(error => {
+    collabStatus.textContent = 'Client unavailable';
+    showError('cannot start Lean client: ' + String(error));
+  });
 } else {
-  // DOM-only test harnesses do not load the generated browser WASM module.
-  api({ cmd: 'state' }).then(r => apply(r, { block: 0, offset: 0 }))
-    .catch(() => showError('cannot reach the backend'));
+  collabStatus.textContent = 'Client unavailable';
+  showError('Lean browser client is missing; build it with npm run wasm:build');
 }
+
+
 
 // Poll the authoritative room snapshot. Local input remains serialized through
 // the request queue; remote snapshots are integrated only when no local request
@@ -611,11 +554,6 @@ document.getElementById('share-room').addEventListener('click', async () => {
   }
 });
 
-// Test hook (also handy in the console).
-window.__editor = {
-  whenIdle: () => (running || queue.length) ? new Promise(r => idleWaiters.push(r)) : Promise.resolve(),
-  get state() { return state; },
-};
 })();
 </script>
 </body>
