@@ -1,4 +1,4 @@
-/-!
+/-
 # Browser-side OT smoke test
 
 This entry point runs the existing Lean session and edit builders in the browser.
