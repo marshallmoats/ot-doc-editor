@@ -72,6 +72,7 @@
     <span id="status" role="alert"></span>
   </div>
   <div id="editor" contenteditable="true" spellcheck="false" role="textbox" aria-multiline="true" aria-label="Document"></div>
+  <div id="lean-client" hidden></div>
   <p class="hint">Edits and shared undo/redo are validated by the Lean room server.
     Use <kbd>Ctrl</kbd>/<kbd>⌘</kbd>+<kbd>Z</kbd> to undo and <kbd>Shift</kbd>+<kbd>Z</kbd> or <kbd>Y</kbd> to redo.</p>
 </div>
@@ -92,8 +93,10 @@ const clientId = (window.crypto && crypto.randomUUID)
 const collabStatus = document.getElementById('collab-status');
 document.getElementById('room-name').textContent = roomName;
 
-let state = { doc: [], rev: 0, canUndo: false, canRedo: false };
-let lastPos = { block: 0, offset: 0 };   // last known caret (focus end), in blocks / code points
+let state = { doc: [], rev: 0, canUndo: false, canRedo: false, pendingOps: [], pendingCount: 0 };
+let lastPos = { block: 0, offset: 0 };
+let networkBusy = false;
+let failedFlush = false;   // last known caret (focus end), in blocks / code points
 let statusTimer = null;
 
 /* ---- code point helpers: Lean counts Unicode scalar values, JS strings count UTF-16 units ---- */
@@ -200,7 +203,7 @@ document.addEventListener('selectionchange', () => {
 /* ---- talking to the backend ---- */
 async function api(msg) {
   if (msg.cmd === 'state') {
-    const r = await fetch('/collab?room=' + encodeURIComponent(roomName), { cache: 'no-store' });
+    const r = await fetch('/collab?room=' + encodeURIComponent(roomName) + '&since=' + encodeURIComponent(state.rev), { cache: 'no-store' });
     return r.json();
   }
   const payload = {
@@ -217,10 +220,18 @@ async function api(msg) {
   return r.json();
 }
 
-function apply(resp, keep) {
+async function apply(resp, keep) {
   if (!resp.ok) { showError(resp.error || 'request failed'); render(); setCaret(keep); return; }
-  state = resp;
-  render();
+  if (window.__leanBridgeReady) {
+    const bridge = await window.__leanBridgeReady;
+    if (resp.changes && resp.changes.length) await bridge.ports.remote.send(JSON.stringify(resp.changes));
+    state.canUndo = !!resp.canUndo;
+    state.canRedo = !!resp.canRedo;
+    render();
+  } else {
+    state = resp;
+    render();
+  }
   collabStatus.textContent = 'Connected · revision ' + state.rev;
   editor.focus();
   setCaret(resp.cursor || keep);
@@ -234,9 +245,15 @@ function caretAfterInsert(from, text) {
 }
 
 async function replace(from, to, text) {
+  if (window.__leanBridgeReady) {
+    failedFlush = false;
+    const bridge = await window.__leanBridgeReady;
+    await bridge.ports.intent.send(JSON.stringify({ cmd: 'replace', from, to, text }));
+    // beforeinput is cancelled, so the browser never advances its native caret.
+    setCaret(text ? caretAfterInsert(from, text) : from);
+    return;
+  }
   const resp = await api({ cmd: 'replace', from, to, text });
-  // beforeinput is cancelled, so the browser never advances its native caret.
-  // Restore it after the accepted edit, not at the insertion's original start.
   apply(resp, text ? caretAfterInsert(from, text) : from);
 }
 
@@ -293,7 +310,16 @@ async function perform(it) {
     case 'cut': return collapsed ? undefined : replace(from, to, '');
     case 'undo': return apply(await api({ cmd: 'undo' }), from);
     case 'redo': return apply(await api({ cmd: 'redo' }), from);
-    case 'kind': return apply(await api({ cmd: 'setKind', block: from.block, kind: it.kind }), from);
+    case 'kind': {
+      if (window.__leanBridgeReady) {
+        failedFlush = false;
+        const bridge = await window.__leanBridgeReady;
+        await bridge.ports.intent.send(JSON.stringify({ cmd: 'setKind', block: from.block, kind: it.kind }));
+        setCaret(from);
+        return;
+      }
+      return apply(await api({ cmd: 'setKind', block: from.block, kind: it.kind }), from);
+    }
   }
 }
 
@@ -364,17 +390,81 @@ els.undo.addEventListener('click', () => enqueue({ type: 'undo' }));
 els.redo.addEventListener('click', () => enqueue({ type: 'redo' }));
 els.kind.addEventListener('change', () => enqueue({ type: 'kind', kind: els.kind.value }));
 
-/* ---- start ---- */
-api({ cmd: 'state' }).then(r => apply(r, { block: 0, offset: 0 }))
-  .catch(() => showError('cannot reach the backend'));
+/* ---- Lean client bridge + initial room state ---- */
+window.__editorBridgeSnapshot = raw => {
+  const focused = document.activeElement === editor;
+  const caret = focused ? currentRange().to : lastPos;
+  const next = JSON.parse(raw);
+  state = { ...next, canUndo: state.canUndo, canRedo: state.canRedo };
+  render();
+  if (focused) setCaret(caret);
+  if (state.pendingOps && state.pendingOps.length && !networkBusy && !failedFlush) {
+    void flushPending();
+  }
+};
+window.__editorBridgeError = message => showError(String(message));
+
+async function flushPending() {
+  if (networkBusy || failedFlush || !window.__leanBridgeReady) return;
+  if (!state.pendingOps || !state.pendingOps.length) return;
+  networkBusy = true;
+  const submitted = state.pendingOps;
+  try {
+    const resp = await api({ cmd: 'submitOps', ops: submitted });
+    if (!resp.ok) {
+      const latest = await api({ cmd: 'state' });
+      if (latest.ok && latest.rev > state.rev && latest.changes && latest.changes.length) {
+        const bridge = await window.__leanBridgeReady;
+        await bridge.ports.remote.send(JSON.stringify(latest.changes));
+        state.canUndo = !!latest.canUndo;
+        state.canRedo = !!latest.canRedo;
+      } else {
+        failedFlush = true;
+        showError(resp.error || 'request failed');
+      }
+    } else {
+      const bridge = await window.__leanBridgeReady;
+      if (resp.changes && resp.changes.length) await bridge.ports.remote.send(JSON.stringify(resp.changes));
+      await bridge.ports.ack.send(JSON.stringify({
+        acceptedEdit: resp.acceptedEdit,
+        acceptedRevision: resp.acceptedRevision
+      }));
+      state.canUndo = !!resp.canUndo;
+      state.canRedo = !!resp.canRedo;
+      collabStatus.textContent = 'Connected · revision ' + state.rev;
+    }
+  } catch (e) {
+    failedFlush = true;
+    showError(String(e));
+  } finally {
+    networkBusy = false;
+  }
+  if (!failedFlush && state.pendingOps && state.pendingOps.length) void flushPending();
+}
+
+if (window.__leanBridgeReady) {
+  window.__leanBridgeReady.then(async bridge => {
+    await bridge.ports['snapshot-request'].send('ready');
+    const r = await api({ cmd: 'state' });
+    if (r.ok && r.changes && r.changes.length) await bridge.ports.remote.send(JSON.stringify(r.changes));
+    state.canUndo = !!r.canUndo;
+    state.canRedo = !!r.canRedo;
+    render();
+    collabStatus.textContent = 'Connected · revision ' + state.rev;
+  }).catch(() => showError('cannot start Lean client'));
+} else {
+  // DOM-only test harnesses do not load the generated browser WASM module.
+  api({ cmd: 'state' }).then(r => apply(r, { block: 0, offset: 0 }))
+    .catch(() => showError('cannot reach the backend'));
+}
 
 // Poll the authoritative room snapshot. Local input remains serialized through
 // the request queue; remote snapshots are integrated only when no local request
 // or IME composition is in flight.
 setInterval(async () => {
-  if (running || queue.length || composing) return;
+  if (running || queue.length || composing || networkBusy || state.pendingCount) return;
   try {
-    const r = await fetch('/collab?room=' + encodeURIComponent(roomName), { cache: 'no-store' });
+    const r = await fetch('/collab?room=' + encodeURIComponent(roomName) + '&since=' + encodeURIComponent(state.rev), { cache: 'no-store' });
     const remote = await r.json();
     if (!remote.ok) {
       collabStatus.textContent = 'Disconnected';
@@ -383,7 +473,14 @@ setInterval(async () => {
     if (remote.rev > state.rev) {
       const focused = document.activeElement === editor;
       const caret = focused ? currentRange().to : lastPos;
-      state = remote;
+      if (window.__leanBridgeReady) {
+        const bridge = await window.__leanBridgeReady;
+        await bridge.ports.remote.send(JSON.stringify(remote.changes || []));
+        state.canUndo = !!remote.canUndo;
+        state.canRedo = !!remote.canRedo;
+      } else {
+        state = remote;
+      }
       render();
       if (focused) setCaret(caret);
     }
