@@ -17,8 +17,16 @@ from urllib.parse import parse_qs, urlsplit
 
 ROOT = os.path.dirname(os.path.abspath(__file__))
 BUILD = os.path.join(ROOT, "..", ".lake", "build", "bin")
-EXE = os.environ.get("OT_EXE") or os.path.join(BUILD, "ot-editor.exe")
-COLLAB_EXE = os.environ.get("OT_COLLAB_EXE") or os.path.join(BUILD, "ot-collab.exe")
+
+def built_executable(name, env_name):
+    configured = os.environ.get(env_name)
+    if configured:
+        return configured
+    candidates = [os.path.join(BUILD, name), os.path.join(BUILD, name + ".exe")]
+    return next((path for path in candidates if os.path.exists(path)), candidates[0])
+
+EXE = built_executable("ot-editor", "OT_EXE")
+COLLAB_EXE = built_executable("ot-collab", "OT_COLLAB_EXE")
 MAX_BODY = 1 << 20
 ROOM_RE = re.compile(r"^[A-Za-z0-9_-]{1,64}$")
 
