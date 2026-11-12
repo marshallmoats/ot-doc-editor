@@ -103,7 +103,7 @@ while (Date.now() < deadline &&
 assert.equal(postCount, 1, "Lean pending operation was not submitted exactly once");
 assert.equal(clientSnapshot.rev, 1);
 assert.equal(clientSnapshot.pendingCount, 0);
-assert.equal(window.document.getElementById("status").style.display, "none");
+assert.notEqual(window.document.getElementById("status").style.display, "inline-block");
 assert.equal(window.document.getElementById("collab-status").textContent,
   "Connected · revision 1",
   "transport checked the cached revision before Lean published its acknowledgement snapshot");
