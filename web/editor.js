@@ -57,14 +57,20 @@ function currentRange() {
   }
   return {from:lastPos,to:lastPos};
 }
-function setCaret(pos) {
-  if (!state || !state.doc.length) return;
-  const b=Math.min(pos.block,state.doc.length-1), o=Math.min(pos.offset,blockLen(b));
-  const el=editor.children[b], t=el.firstChild, range=document.createRange();
-  if (t && t.nodeType===3) range.setStart(t,cpToIdx(t.data,o)); else range.setStart(el,0);
-  range.collapse(true); const sel=getSelection(); sel.removeAllRanges(); sel.addRange(range);
-  lastPos={block:b,offset:o}; syncKind();
+function pointFor(pos) {
+  const b=Math.max(0,Math.min(pos.block,state.doc.length-1));
+  const o=Math.max(0,Math.min(pos.offset,blockLen(b)));
+  const el=editor.children[b], t=el.firstChild;
+  return t && t.nodeType===3 ? [t,cpToIdx(t.data,o)] : [el,0];
 }
+function setRange(range) {
+  if (!state || !state.doc.length) return;
+  const a=pointFor(range.from), b=pointFor(range.to), r=document.createRange();
+  r.setStart(a[0],a[1]);r.setEnd(b[0],b[1]);
+  const sel=getSelection();sel.removeAllRanges();sel.addRange(r);
+  lastPos={...range.to};syncKind();
+}
+function setCaret(pos) { setRange({from:pos,to:pos}); }
 document.addEventListener("selectionchange", () => {
   const s=getSelection(); if (s&&s.rangeCount&&editor.contains(s.focusNode)) {
     const p=domToPos(s.focusNode,s.focusOffset); if(p){lastPos=p;syncKind();}
@@ -101,16 +107,17 @@ function integrate(changes, snapshot) {
     const selection=getSelection();
     const selectionInside=!!(selection && selection.rangeCount && editor.contains(selection.anchorNode));
     const caretFocused=selectionInside || document.activeElement===editor;
-    let caret=selectionInside ? currentRange().to : lastPos;
+    let selected=selectionInside ? currentRange() : null;
     if (change.clientId===clientId && requestCounts.has(change.requestId)) {
       const count=requestCounts.get(change.requestId);
       OTClient.acknowledge(client,change,count);
       requestCounts.delete(change.requestId);
     } else {
       const transformedRemote=OTClient.receiveRemote(client,change);
-      caret=mapPos(caret,transformedRemote);
+      if(selected) selected={from:mapPos(selected.from,transformedRemote),to:mapPos(selected.to,transformedRemote)};
     }
-    snapshotFromClient(); render(); if(caretFocused)setCaret(caret);
+    snapshotFromClient(); render();
+    if(selected)setRange(selected);else if(caretFocused)setCaret(lastPos);
   }
   if (state) {
     if (snapshot) {
