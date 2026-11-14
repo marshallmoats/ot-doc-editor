@@ -3,8 +3,8 @@ import { readFile } from "node:fs/promises";
 import { JSDOM } from "jsdom";
 
 const html = await readFile(new URL("./index.html", import.meta.url), "utf8");
-const inline = html.match(/<script>\s*([\s\S]*?)<\/script>/);
-assert.ok(inline, "production editor script was not found");
+const script = await readFile(new URL("./editor.js", import.meta.url), "utf8");
+assert.ok(script.length > 0, "compiled production editor script was not found");
 
 const dom = new JSDOM(html, {
   url: "http://127.0.0.1/?room=transport-test",
@@ -87,7 +87,7 @@ window.fetch = async (_url, init = {}) => {
   }), { headers: { "Content-Type": "application/json" } });
 };
 
-window.eval(inline[1]);
+window.eval(script);
 await new Promise(resolve => setTimeout(resolve, 60));
 assert.equal(window.document.getElementById("collab-status").textContent,
   "Connected · revision 0");
