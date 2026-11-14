@@ -51,7 +51,7 @@ const collabStatus = document.getElementById('collab-status')!;
 document.getElementById('room-name')!.textContent = roomName;
 
 let state: EditorState = { doc: [], rev: 0, canUndo: false, canRedo: false, pendingOps: [], pendingCount: 0 };
-let bridgePortQueue = Promise.resolve();
+let bridgePortQueue: Promise<unknown> = Promise.resolve();
 let bridgeSnapshotWaiters: BridgeWaiter[] = [];
 
 // A port send acknowledges delivery to Lean, not necessarily delivery of the
