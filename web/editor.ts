@@ -37,6 +37,8 @@ interface Window {
   __editorServerAction?: (action: unknown) => void;
 }
 
+(() => {
+
 const editor = document.getElementById('editor')!;
 let editorContent: HTMLElement = document.getElementById('editor-content')!;
 const els = {
@@ -305,7 +307,7 @@ document.addEventListener('beforeinput', (e: InputEvent) => {
 document.addEventListener('beforeinput', (e: InputEvent) => {
   // Lasm handles the event at the editor mount root and patches its view
   // before bubbling reaches document. Restore the browser selection afterward.
-  if (e.defaultPrevented && editor.contains(e.target) &&
+  if (e.defaultPrevented && editor.contains(e.target as Node) &&
       Number.isInteger(e.otCaretBlock) && Number.isInteger(e.otCaretOffset)) {
     setCaret({ block: e.otCaretBlock, offset: e.otCaretOffset });
   }
