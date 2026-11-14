@@ -59,8 +59,8 @@ let bridgeSnapshotWaiters: BridgeWaiter[] = [];
 // for that snapshot before reading the mirrored revision or sending the next
 // state-dependent command.
 function sendLeanAndWait(bridge: LeanBridge, portName: string, payload: unknown, matches: (snapshot: LeanSnapshot) => boolean = () => true): Promise<LeanSnapshot> {
-  const task = bridgePortQueue.then(() => new Promise((resolve, reject) => {
-    const waiter = {
+  const task = bridgePortQueue.then(() => new Promise<LeanSnapshot>((resolve, reject) => {
+    const waiter: BridgeWaiter = {
       matches,
       resolve: value => { clearTimeout(timer); resolve(value); },
       reject: error => { clearTimeout(timer); reject(error); }
@@ -282,7 +282,7 @@ editor.addEventListener('compositionend', (e: CompositionEvent) => {
 // Read browser selection and clipboard payload only. The delegated Lasm
 // listener sends these facts to Lean, which constructs and applies the edit.
 document.addEventListener('beforeinput', (e: InputEvent) => {
-  if (!editor.contains(e.target)) return;
+  if (!editor.contains(e.target as Node)) return;
   const range = currentRange();
   const from = range.from, to = range.to;
   e.otFromBlock = from.block; e.otFromOffset = from.offset;
@@ -302,7 +302,7 @@ document.addEventListener('beforeinput', (e: InputEvent) => {
   }
   e.otCaretBlock = caret.block; e.otCaretOffset = caret.offset;
 }, true);
-document.addEventListener('beforeinput', e => {
+document.addEventListener('beforeinput', (e: InputEvent) => {
   // Lasm handles the event at the editor mount root and patches its view
   // before bubbling reaches document. Restore the browser selection afterward.
   if (e.defaultPrevented && editor.contains(e.target) &&
