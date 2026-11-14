@@ -16,8 +16,10 @@ jobs:
       - uses: actions/setup-node@v5
         with:
           node-version: 24
-      - name: Install browser test dependency
+      - name: Install browser test and TypeScript dependencies
         run: npm install --no-save jsdom
+      - name: Compile browser TypeScript
+        run: npm run build:ts
       - name: Test configurable collaboration delay
         run: python3 web/test_server_delay.py
       - name: Test two-client collaboration server

@@ -37,7 +37,13 @@ def main():
         assert "import { mount }" in html, html[:2000]
         assert any(f'"/dist/{name}"' in html for name in loaders), html[:2000]
         assert "window.__leanBridgeReady" in html
-        assert "snapshot-request" in html
+        assert html.index("window.__leanBridgeReady") < html.index('<script src="./editor.js">')
+
+        with urlopen(base + "/editor.js") as response:
+            assert response.status == 200
+            assert "javascript" in response.headers.get("Content-Type", "")
+            editor_js = response.read().decode("utf-8")
+        assert "snapshot-request" in editor_js
 
         with urlopen(base + "/dist/" + loaders[0]) as response:
             assert response.status == 200
