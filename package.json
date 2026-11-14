@@ -3,10 +3,12 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "wasm:dev": "lasm dev BrowserMain.lean --target browser",
-    "wasm:build": "lasm build BrowserBridge.lean --target browser"
+    "wasm:dev": "npm run build:ts && lasm dev BrowserMain.lean --target browser",
+    "wasm:build": "npm run build:ts && lasm build BrowserBridge.lean --target browser",
+    "build:ts": "tsc -p tsconfig.json"
   },
   "devDependencies": {
-    "@lasm/cli": "0.7.0"
+    "@lasm/cli": "0.7.0",
+    "typescript": "^5.9.3"
   }
 }
