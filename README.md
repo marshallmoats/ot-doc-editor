@@ -2,7 +2,7 @@
 
 A web editor whose document model and operational-transformation algebra are
 implemented and verified in Lean 4. The production browser editor runs the
-optimistic collaboration client in Lean/WebAssembly; JavaScript is limited to
+optimistic collaboration client in Lean/WebAssembly; TypeScript is limited to
 DOM, selection/IME, rendering, and HTTP transport.
 
 ## Run the live editor
@@ -105,7 +105,8 @@ python3 web/test_wasm_serving.py
   the production browser editor.
 - `BrowserMain.lean` — standalone deterministic browser exercise.
 - `CollaborationMain.lean` — JSON-lines protocol for the native room server.
-- `web/` — DOM/IME UI, HTTP adapter, and integration tests.
+- `web/editor.ts` — typed DOM/IME glue and HTTP transport; document editing and OT remain in Lean.
+- `web/` — Python HTTP adapter and integration tests.
 
 ## Trust model and limitations
 
