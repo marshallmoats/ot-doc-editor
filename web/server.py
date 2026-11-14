@@ -186,7 +186,7 @@ try {{
   window.__editorBridgeError?.(String(error));
 }}
 </script>"""
-                    page = page.replace("<script>\n(() => {", bootstrap + "<script>\n(() => {")
+                    page = page.replace('<script src="./editor.js"></script>', bootstrap + '<script src="./editor.js"></script>')
                     page = page.replace("</body>", module + "\n</body>")
                 return self._send(200, page, "text/html; charset=utf-8")
             if parsed.path == "/collab":
