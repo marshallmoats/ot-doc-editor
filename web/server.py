@@ -160,6 +160,12 @@ def make_handler(rooms, collab_delay_ms=0):
                     mimetypes.guess_type(target)[0] or "application/octet-stream")
                 with open(target, "rb") as f:
                     return self._send(200, f.read(), content_type)
+            if parsed.path == "/editor.js":
+                editor_script = os.path.join(ROOT, "editor.js")
+                if not os.path.isfile(editor_script):
+                    return self._send(404, "not found", "text/plain")
+                with open(editor_script, "rb") as f:
+                    return self._send(200, f.read(), "text/javascript; charset=utf-8")
             if parsed.path in ("/", "/index.html"):
                 with open(os.path.join(ROOT, "index.html"), "r", encoding="utf-8") as f:
                     page = f.read()
